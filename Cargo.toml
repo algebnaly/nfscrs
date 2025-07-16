@@ -1,0 +1,12 @@
+[package]
+name = "nfscrs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+onc-rpc = "0.3"
+rand = "0.9.1"
+serde = { version = "1.0.219", features = ["derive", "alloc"] }
+serde-xdr = "0.6.0"
+serde_bytes = "0.11.17"
+thiserror = "2.0.12"
