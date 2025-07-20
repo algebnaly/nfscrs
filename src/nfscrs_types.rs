@@ -6,12 +6,16 @@ use crate::NFSCRSInnerError;
 use crate::nfs4types::Component4;
 use crate::nfsv4ops::FAttr4;
 
+#[derive(Debug, Clone)]
 pub struct AbsolutePath<'a>(Cow<'a, Path>);
 
 impl<'a> AbsolutePath<'a> {
     /// Access inner `Cow<Path>` if needed
     pub fn as_cow(&self) -> &Cow<'a, Path> {
         &self.0
+    }
+    pub fn into_owned(self) -> AbsolutePath<'static>{
+        AbsolutePath(Cow::Owned(self.0.into_owned()))
     }
 }
 

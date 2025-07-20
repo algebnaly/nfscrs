@@ -1,11 +1,14 @@
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{self, VariantAccess, Visitor},
+};
 use serde_bytes::ByteBuf;
 
 use crate::{
-    NFSCRSError, NFSCRSInnerError, NFSClientSession,
+    NFSCRSInnerError, NFSClientSession,
     nfs4types::{
-        AttrList4, BitMap4, ClientId4, Component4, Count4, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE,
-        NFSCookie4, SeqId4,
+        AceFlag4, AceMask4, AceType4, AttrList4, BitMap4, ChangeId4, ClientId4, Component4, Count4,
+        NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4, Utf8StrMixed,
     },
     nfscrs_types::DirEntry,
     xdr_types::Opaque,
@@ -35,12 +38,12 @@ pub enum NFSArgOp4 {
     OP_NVERIFY,                                      //NVERIFY4args opnverify;
     OP_OPEN(Open4Args),                              //OPEN4args opopen;
     OP_OPENATTR,                                     //OPENATTR4args opopenattr;
-    OP_OPEN_CONFIRM,                                 //OPEN_CONFIRM4args opopen_confirm;
+    OP_OPEN_CONFIRM(OpenConfirm4Args),               //OPEN_CONFIRM4args opopen_confirm;
     OP_OPEN_DOWNGRADE,                               //OPEN_DOWNGRADE4args opopen_downgrade;
-    OP_PUTFH,                                        //PUTFH4args opputfh;
+    OP_PUTFH(PutFH4Args),                            //PUTFH4args opputfh;
     OP_PUTPUBFH,                                     //void;
     OP_PUTROOTFH,                                    //void;
-    OP_READ,                                         //READ4args opread;
+    OP_READ(Read4Args),                              //READ4args opread;
     OP_READDIR(ReadDir4Args),                        //READDIR4args opreaddir;
     OP_READLINK,                                     //void;
     OP_REMOVE,                                       //REMOVE4args opremove;
@@ -59,7 +62,7 @@ pub enum NFSArgOp4 {
 }
 
 #[derive(Debug, Deserialize)]
-pub enum NFSResponseOperation4 {
+pub enum NFSResultOp4 {
     _PlaceHolder0,
     _PlaceHolder1,
     _PlaceHolder2,
@@ -69,23 +72,23 @@ pub enum NFSResponseOperation4 {
     OP_CREATE,
     OP_DELEGPURGE,
     OP_DELEGRETURN,
-    OP_GETATTR(GetAttr4Res),
-    OP_GETFH,
+    OP_GETATTR(GetAttr4Result),
+    OP_GETFH(GetFH4Result),
     OP_LINK,
     OP_LOCK,
     OP_LOCKT,
     OP_LOCKU,
-    OP_LOOKUP(LookUp4Res),
+    OP_LOOKUP(LookUp4Result),
     OP_LOOKUPP,
     OP_NVERIFY,
-    OP_OPEN,
+    OP_OPEN(Open4Result),
     OP_OPENATTR,
-    OP_OPEN_CONFIRM,
+    OP_OPEN_CONFIRM(OpenConfirm4Result),
     OP_OPEN_DOWNGRADE,
-    OP_PUTFH,
+    OP_PUTFH(PutFH4Result),
     OP_PUTPUBFH,
-    OP_PUTROOTFH(PutRootFH4Res),
-    OP_READ,
+    OP_PUTROOTFH(PutRootFH4Result),
+    OP_READ(Read4Result),
     OP_READDIR(ReadDir4Result),
     OP_READLINK,
     OP_REMOVE,
@@ -103,82 +106,178 @@ pub enum NFSResponseOperation4 {
     OP_ILLEGAL,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
+#[repr(u32)]
 pub enum NFSStat4 {
-    NFS4_OK,                     /*                0 everything is okay       */
-    NFS4ERR_PERM,                /*           1 caller not privileged    */
-    NFS4ERR_NOENT,               /*          2 no such file/directory   */
-    NFS4ERR_IO,                  /*             5 hard I/O error           */
-    NFS4ERR_NXIO,                /*           6 no such device           */
-    NFS4ERR_ACCESS,              /*         13 access denied            */
-    NFS4ERR_EXIST,               /*          17 file already exists      */
-    NFS4ERR_XDEV,                /*           18 different file systems   */
-    _NFSSTAT4_UNUSED,            /*19  Unused/reserved        */
-    NFS4ERR_NOTDIR,              /*         20 should be a directory    */
-    NFS4ERR_ISDIR,               /*          21 should not be directory  */
-    NFS4ERR_INVAL,               /*          22 invalid argument         */
-    NFS4ERR_FBIG,                /*           27 file exceeds server max  */
-    NFS4ERR_NOSPC,               /*          28 no space on file system  */
-    NFS4ERR_ROFS,                /*           30 read-only file system    */
-    NFS4ERR_MLINK,               /*          31 too many hard links      */
-    NFS4ERR_NAMETOOLONG,         /*    63 name exceeds server max  */
-    NFS4ERR_NOTEMPTY,            /*       66 directory not empty      */
-    NFS4ERR_DQUOT,               /*          69 hard quota limit reached */
-    NFS4ERR_STALE,               /*          70 file no longer exists    */
-    NFS4ERR_BADHANDLE,           /*      10001 Illegal filehandle       */
-    NFS4ERR_BAD_COOKIE,          /*     10003 READDIR cookie is stale  */
-    NFS4ERR_NOTSUPP,             /*        10004 operation not supported  */
-    NFS4ERR_TOOSMALL,            /*       10005 response limit exceeded  */
-    NFS4ERR_SERVERFAULT,         /*    10006 undefined server error   */
-    NFS4ERR_BADTYPE,             /*        10007 type invalid for CREATE  */
-    NFS4ERR_DELAY,               /*          10008 file "busy" - retry      */
-    NFS4ERR_SAME,                /*           10009 nverify says attrs same  */
-    NFS4ERR_DENIED,              /*         10010 lock unavailable         */
-    NFS4ERR_EXPIRED,             /*        10011 lock lease expired       */
-    NFS4ERR_LOCKED,              /*         10012 I/O failed due to lock   */
-    NFS4ERR_GRACE,               /*          10013 in grace period          */
-    NFS4ERR_FHEXPIRED,           /*      10014 filehandle expired       */
-    NFS4ERR_SHARE_DENIED,        /*   10015 share reserve denied     */
-    NFS4ERR_WRONGSEC,            /*       10016 wrong security flavor    */
-    NFS4ERR_CLID_INUSE,          /*     10017 clientid in use          */
-    NFS4ERR_RESOURCE,            /*       10018 resource exhaustion      */
-    NFS4ERR_MOVED,               /*          10019 file system relocated    */
-    NFS4ERR_NOFILEHANDLE,        /*   10020 current FH is not set    */
-    NFS4ERR_MINOR_VERS_MISMATCH, /* 10021 minor vers not supp */
-    NFS4ERR_STALE_CLIENTID,      /* 10022 server has rebooted      */
-    NFS4ERR_STALE_STATEID,       /*  10023 server has rebooted      */
-    NFS4ERR_OLD_STATEID,         /*    10024 state is out of sync     */
-    NFS4ERR_BAD_STATEID,         /*    10025 incorrect stateid        */
-    NFS4ERR_BAD_SEQID,           /*      10026 request is out of seq.   */
-    NFS4ERR_NOT_SAME,            /*       10027 verify - attrs not same  */
-    NFS4ERR_LOCK_RANGE,          /*     10028 lock range not supported */
-    NFS4ERR_SYMLINK,             /*        10029 should be file/directory */
-    NFS4ERR_RESTOREFH,           /*      10030 no saved filehandle      */
-    NFS4ERR_LEASE_MOVED,         /*    10031 some file system moved   */
-    NFS4ERR_ATTRNOTSUPP,         /*    10032 recommended attr not sup */
-    NFS4ERR_NO_GRACE,            /*       10033 reclaim outside of grace */
-    NFS4ERR_RECLAIM_BAD,         /*    10034 reclaim error at server  */
-    NFS4ERR_RECLAIM_CONFLICT,    /* 10035 conflict on reclaim    */
-    NFS4ERR_BADXDR,              /*         10036 XDR decode failed        */
-    NFS4ERR_LOCKS_HELD,          /*     10037 file locks held at CLOSE */
-    NFS4ERR_OPENMODE,            /*       10038 conflict in OPEN and I/O */
-    NFS4ERR_BADOWNER,            /*       10039 owner translation bad    */
-    NFS4ERR_BADCHAR,             /*        10040 UTF-8 char not supported */
-    NFS4ERR_BADNAME,             /*        10041 name not supported       */
-    NFS4ERR_BAD_RANGE,           /*      10042 lock range not supported */
-    NFS4ERR_LOCK_NOTSUPP,        /*   10043 no atomic up/downgrade   */
-    NFS4ERR_OP_ILLEGAL,          /*     10044 undefined operation      */
-    NFS4ERR_DEADLOCK,            /*       10045 file locking deadlock    */
-    NFS4ERR_FILE_OPEN,           /*      10046 open file blocks op.     */
-    NFS4ERR_ADMIN_REVOKED,       /*  10047 lock-owner state revoked */
-    NFS4ERR_CB_PATH_DOWN,        /*10048  callback path down       */
+    NFS4_OK = 0,                         /*                0 everything is okay       */
+    NFS4ERR_PERM = 1,                    /*           1 caller not privileged    */
+    NFS4ERR_NOENT = 2,                   /*          2 no such file/directory   */
+    NFS4ERR_IO = 5,                      /*             5 hard I/O error           */
+    NFS4ERR_NXIO = 6,                    /*           6 no such device           */
+    NFS4ERR_ACCESS = 13,                 /*         13 access denied            */
+    NFS4ERR_EXIST = 17,                  /*          17 file already exists      */
+    NFS4ERR_XDEV = 18,                   /*           18 different file systems   */
+    _NFSSTAT4_UNUSED = 19,               /*19  Unused/reserved        */
+    NFS4ERR_NOTDIR = 20,                 /*         20 should be a directory    */
+    NFS4ERR_ISDIR = 21,                  /*          21 should not be directory  */
+    NFS4ERR_INVAL = 22,                  /*          22 invalid argument         */
+    NFS4ERR_FBIG = 27,                   /*           27 file exceeds server max  */
+    NFS4ERR_NOSPC = 28,                  /*          28 no space on file system  */
+    NFS4ERR_ROFS = 30,                   /*           30 read-only file system    */
+    NFS4ERR_MLINK = 31,                  /*          31 too many hard links      */
+    NFS4ERR_NAMETOOLONG = 63,            /*    63 name exceeds server max  */
+    NFS4ERR_NOTEMPTY = 66,               /*       66 directory not empty      */
+    NFS4ERR_DQUOT = 69,                  /*          69 hard quota limit reached */
+    NFS4ERR_STALE = 70,                  /*          70 file no longer exists    */
+    NFS4ERR_BADHANDLE = 10001,           /*      10001 Illegal filehandle       */
+    NFS4ERR_BAD_COOKIE = 10003,          /*     10003 READDIR cookie is stale  */
+    NFS4ERR_NOTSUPP = 10004,             /*        10004 operation not supported  */
+    NFS4ERR_TOOSMALL = 10005,            /*       10005 response limit exceeded  */
+    NFS4ERR_SERVERFAULT = 10006,         /*    10006 undefined server error   */
+    NFS4ERR_BADTYPE = 10007,             /*        10007 type invalid for CREATE  */
+    NFS4ERR_DELAY = 10008,               /*          10008 file "busy" - retry      */
+    NFS4ERR_SAME = 10009,                /*           10009 nverify says attrs same  */
+    NFS4ERR_DENIED = 10010,              /*         10010 lock unavailable         */
+    NFS4ERR_EXPIRED = 10011,             /*        10011 lock lease expired       */
+    NFS4ERR_LOCKED = 10012,              /*         10012 I/O failed due to lock   */
+    NFS4ERR_GRACE = 10013,               /*          10013 in grace period          */
+    NFS4ERR_FHEXPIRED = 10014,           /*      10014 filehandle expired       */
+    NFS4ERR_SHARE_DENIED = 10015,        /*   10015 share reserve denied     */
+    NFS4ERR_WRONGSEC = 10016,            /*       10016 wrong security flavor    */
+    NFS4ERR_CLID_INUSE = 10017,          /*     10017 clientid in use          */
+    NFS4ERR_RESOURCE = 10018,            /*       10018 resource exhaustion      */
+    NFS4ERR_MOVED = 10019,               /*          10019 file system relocated    */
+    NFS4ERR_NOFILEHANDLE = 10020,        /*   10020 current FH is not set    */
+    NFS4ERR_MINOR_VERS_MISMATCH = 10021, /* 10021 minor vers not supp */
+    NFS4ERR_STALE_CLIENTID = 10022,      /* 10022 server has rebooted      */
+    NFS4ERR_STALE_STATEID = 10023,       /*  10023 server has rebooted      */
+    NFS4ERR_OLD_STATEID = 10024,         /*    10024 state is out of sync     */
+    NFS4ERR_BAD_STATEID = 10025,         /*    10025 incorrect stateid        */
+    NFS4ERR_BAD_SEQID = 10026,           /*      10026 request is out of seq.   */
+    NFS4ERR_NOT_SAME = 10027,            /*       10027 verify - attrs not same  */
+    NFS4ERR_LOCK_RANGE = 10028,          /*     10028 lock range not supported */
+    NFS4ERR_SYMLINK = 10029,             /*        10029 should be file/directory */
+    NFS4ERR_RESTOREFH = 10030,           /*      10030 no saved filehandle      */
+    NFS4ERR_LEASE_MOVED = 10031,         /*    10031 some file system moved   */
+    NFS4ERR_ATTRNOTSUPP = 10032,         /*    10032 recommended attr not sup */
+    NFS4ERR_NO_GRACE = 10033,            /*       10033 reclaim outside of grace */
+    NFS4ERR_RECLAIM_BAD = 10034,         /*    10034 reclaim error at server  */
+    NFS4ERR_RECLAIM_CONFLICT = 10035,    /* 10035 conflict on reclaim    */
+    NFS4ERR_BADXDR = 10036,              /*         10036 XDR decode failed        */
+    NFS4ERR_LOCKS_HELD = 10037,          /*     10037 file locks held at CLOSE */
+    NFS4ERR_OPENMODE = 10038,            /*       10038 conflict in OPEN and I/O */
+    NFS4ERR_BADOWNER = 10039,            /*       10039 owner translation bad    */
+    NFS4ERR_BADCHAR = 10040,             /*        10040 UTF-8 char not supported */
+    NFS4ERR_BADNAME = 10041,             /*        10041 name not supported       */
+    NFS4ERR_BAD_RANGE = 10042,           /*      10042 lock range not supported */
+    NFS4ERR_LOCK_NOTSUPP = 10043,        /*   10043 no atomic up/downgrade   */
+    NFS4ERR_OP_ILLEGAL = 10044,          /*     10044 undefined operation      */
+    NFS4ERR_DEADLOCK = 10045,            /*       10045 file locking deadlock    */
+    NFS4ERR_FILE_OPEN = 10046,           /*      10046 open file blocks op.     */
+    NFS4ERR_ADMIN_REVOKED = 10047,       /*  10047 lock-owner state revoked */
+    NFS4ERR_CB_PATH_DOWN = 10048,        /*10048  callback path down       */
+}
+
+struct U32Vistor;
+
+impl<'de> Visitor<'de> for U32Vistor {
+    type Value = u32;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting u32")
+    }
+
+    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(v)
+    }
+}
+
+impl<'de> Deserialize<'de> for NFSStat4 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let descriminant = deserializer.deserialize_u32(U32Vistor {})?;
+        match descriminant {
+            0 => Ok(NFSStat4::NFS4_OK), /*                0 everything is okay       */
+            1 => Ok(NFSStat4::NFS4ERR_PERM), /*           1 caller not privileged    */
+            2 => Ok(NFSStat4::NFS4ERR_NOENT), /*          2 no such file/directory   */
+            5 => Ok(NFSStat4::NFS4ERR_IO), /*             5 hard I/O error           */
+            6 => Ok(NFSStat4::NFS4ERR_NXIO), /*           6 no such device           */
+            13 => Ok(NFSStat4::NFS4ERR_ACCESS), /*         13 access denied            */
+            17 => Ok(NFSStat4::NFS4ERR_EXIST), /*          17 file already exists      */
+            18 => Ok(NFSStat4::NFS4ERR_XDEV), /*           18 different file systems   */
+            19 => Ok(NFSStat4::_NFSSTAT4_UNUSED), /*19  Unused/reserved        */
+            20 => Ok(NFSStat4::NFS4ERR_NOTDIR), /*         20 should be a directory    */
+            21 => Ok(NFSStat4::NFS4ERR_ISDIR), /*          21 should not be directory  */
+            22 => Ok(NFSStat4::NFS4ERR_INVAL), /*          22 invalid argument         */
+            27 => Ok(NFSStat4::NFS4ERR_FBIG), /*           27 file exceeds server max  */
+            28 => Ok(NFSStat4::NFS4ERR_NOSPC), /*          28 no space on file system  */
+            30 => Ok(NFSStat4::NFS4ERR_ROFS), /*           30 read-only file system    */
+            31 => Ok(NFSStat4::NFS4ERR_MLINK), /*          31 too many hard links      */
+            63 => Ok(NFSStat4::NFS4ERR_NAMETOOLONG), /*    63 name exceeds server max  */
+            66 => Ok(NFSStat4::NFS4ERR_NOTEMPTY), /*       66 directory not empty      */
+            69 => Ok(NFSStat4::NFS4ERR_DQUOT), /*          69 hard quota limit reached */
+            70 => Ok(NFSStat4::NFS4ERR_STALE), /*          70 file no longer exists    */
+            10001 => Ok(NFSStat4::NFS4ERR_BADHANDLE), /*      10001 Illegal filehandle       */
+            10003 => Ok(NFSStat4::NFS4ERR_BAD_COOKIE), /*     10003 READDIR cookie is stale  */
+            10004 => Ok(NFSStat4::NFS4ERR_NOTSUPP), /*        10004 operation not supported  */
+            10005 => Ok(NFSStat4::NFS4ERR_TOOSMALL), /*       10005 response limit exceeded  */
+            10006 => Ok(NFSStat4::NFS4ERR_SERVERFAULT), /*    10006 undefined server error   */
+            10007 => Ok(NFSStat4::NFS4ERR_BADTYPE), /*        10007 type invalid for CREATE  */
+            10008 => Ok(NFSStat4::NFS4ERR_DELAY), /*          10008 file "busy" - retry      */
+            10009 => Ok(NFSStat4::NFS4ERR_SAME), /*           10009 nverify says attrs same  */
+            10010 => Ok(NFSStat4::NFS4ERR_DENIED), /*         10010 lock unavailable         */
+            10011 => Ok(NFSStat4::NFS4ERR_EXPIRED), /*        10011 lock lease expired       */
+            10012 => Ok(NFSStat4::NFS4ERR_LOCKED), /*         10012 I/O failed due to lock   */
+            10013 => Ok(NFSStat4::NFS4ERR_GRACE), /*          10013 in grace period          */
+            10014 => Ok(NFSStat4::NFS4ERR_FHEXPIRED), /*      10014 filehandle expired       */
+            10015 => Ok(NFSStat4::NFS4ERR_SHARE_DENIED), /*   10015 share reserve denied     */
+            10016 => Ok(NFSStat4::NFS4ERR_WRONGSEC), /*       10016 wrong security flavor    */
+            10017 => Ok(NFSStat4::NFS4ERR_CLID_INUSE), /*     10017 clientid in use          */
+            10018 => Ok(NFSStat4::NFS4ERR_RESOURCE), /*       10018 resource exhaustion      */
+            10019 => Ok(NFSStat4::NFS4ERR_MOVED), /*          10019 file system relocated    */
+            10020 => Ok(NFSStat4::NFS4ERR_NOFILEHANDLE), /*   10020 current FH is not set    */
+            10021 => Ok(NFSStat4::NFS4ERR_MINOR_VERS_MISMATCH), /* 10021 minor vers not supp */
+            10022 => Ok(NFSStat4::NFS4ERR_STALE_CLIENTID), /* 10022 server has rebooted      */
+            10023 => Ok(NFSStat4::NFS4ERR_STALE_STATEID), /*  10023 server has rebooted      */
+            10024 => Ok(NFSStat4::NFS4ERR_OLD_STATEID), /*    10024 state is out of sync     */
+            10025 => Ok(NFSStat4::NFS4ERR_BAD_STATEID), /*    10025 incorrect stateid        */
+            10026 => Ok(NFSStat4::NFS4ERR_BAD_SEQID), /*      10026 request is out of seq.   */
+            10027 => Ok(NFSStat4::NFS4ERR_NOT_SAME), /*       10027 verify - attrs not same  */
+            10028 => Ok(NFSStat4::NFS4ERR_LOCK_RANGE), /*     10028 lock range not supported */
+            10029 => Ok(NFSStat4::NFS4ERR_SYMLINK), /*        10029 should be file/directory */
+            10030 => Ok(NFSStat4::NFS4ERR_RESTOREFH), /*      10030 no saved filehandle      */
+            10031 => Ok(NFSStat4::NFS4ERR_LEASE_MOVED), /*    10031 some file system moved   */
+            10032 => Ok(NFSStat4::NFS4ERR_ATTRNOTSUPP), /*    10032 recommended attr not sup */
+            10033 => Ok(NFSStat4::NFS4ERR_NO_GRACE), /*       10033 reclaim outside of grace */
+            10034 => Ok(NFSStat4::NFS4ERR_RECLAIM_BAD), /*    10034 reclaim error at server  */
+            10035 => Ok(NFSStat4::NFS4ERR_RECLAIM_CONFLICT), /* 10035 conflict on reclaim    */
+            10036 => Ok(NFSStat4::NFS4ERR_BADXDR), /*         10036 XDR decode failed        */
+            10037 => Ok(NFSStat4::NFS4ERR_LOCKS_HELD), /*     10037 file locks held at CLOSE */
+            10038 => Ok(NFSStat4::NFS4ERR_OPENMODE), /*       10038 conflict in OPEN and I/O */
+            10039 => Ok(NFSStat4::NFS4ERR_BADOWNER), /*       10039 owner translation bad    */
+            10040 => Ok(NFSStat4::NFS4ERR_BADCHAR), /*        10040 UTF-8 char not supported */
+            10041 => Ok(NFSStat4::NFS4ERR_BADNAME), /*        10041 name not supported       */
+            10042 => Ok(NFSStat4::NFS4ERR_BAD_RANGE), /*      10042 lock range not supported */
+            10043 => Ok(NFSStat4::NFS4ERR_LOCK_NOTSUPP), /*   10043 no atomic up/downgrade   */
+            10044 => Ok(NFSStat4::NFS4ERR_OP_ILLEGAL), /*     10044 undefined operation      */
+            10045 => Ok(NFSStat4::NFS4ERR_DEADLOCK), /*       10045 file locking deadlock    */
+            10046 => Ok(NFSStat4::NFS4ERR_FILE_OPEN), /*      10046 open file blocks op.     */
+            10047 => Ok(NFSStat4::NFS4ERR_ADMIN_REVOKED), /*  10047 lock-owner state revoked */
+            10048 => Ok(NFSStat4::NFS4ERR_CB_PATH_DOWN), /*10048  callback path down       */
+            e => Err(de::Error::custom(format!("status code unknown: {e}"))),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Compound4Result {
     pub status: NFSStat4,
     pub tag: String,
-    pub resarray: Vec<NFSResponseOperation4>,
+    pub resarray: Vec<NFSResultOp4>,
 }
 
 impl Compound4Result {
@@ -190,7 +289,7 @@ impl Compound4Result {
 #[derive(Debug, Serialize)]
 pub struct GetAttr4Args {
     /* CURRENT_FH: directory or file */
-    attr_request: BitMap4,
+    pub attr_request: BitMap4,
 }
 
 impl GetAttr4Args {
@@ -200,19 +299,14 @@ impl GetAttr4Args {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct GetAttr4ResOk {
+pub struct GetAttr4ResultOk {
     pub obj_attributes: FAttr4,
 }
 
 #[derive(Debug, Deserialize)]
-pub enum GetAttr4Res {
-    NFS4_OK(GetAttr4ResOk),
+pub enum GetAttr4Result {
+    NFS4_OK(GetAttr4ResultOk),
     Default,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct PutRootFH4Res {
-    status: NFSStat4,
 }
 
 pub const NFS4_VERIFIER_SIZE: usize = 8;
@@ -240,9 +334,9 @@ pub enum SetClientId4Result {
 
 #[derive(Debug, Serialize)]
 pub struct NFSClientId4 {
-    verifier: Verifier4,
+    pub verifier: Verifier4,
 
-    id: ByteBuf, // maximum length is NFS4_OPAQUE_LIMIT,1024.
+    pub id: ByteBuf, // maximum length is NFS4_OPAQUE_LIMIT,1024.
 }
 
 impl NFSClientId4 {
@@ -256,9 +350,9 @@ impl NFSClientId4 {
 
 #[derive(Debug, Serialize)]
 pub struct SetClientId4Args {
-    client: NFSClientId4,
-    callback: CallBackClient4,
-    callback_ident: u32,
+    pub client: NFSClientId4,
+    pub callback: CallBackClient4,
+    pub callback_ident: u32,
 }
 
 impl SetClientId4Args {
@@ -282,8 +376,8 @@ impl SetClientId4Args {
 
 #[derive(Debug, Serialize)]
 pub struct CallBackClient4 {
-    cb_program: u32,
-    cb_location: ClientAddr4,
+    pub cb_program: u32,
+    pub cb_location: ClientAddr4,
 }
 
 impl CallBackClient4 {
@@ -297,10 +391,10 @@ impl CallBackClient4 {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ClientAddr4 {
+pub struct ClientAddr4 {
     /* see struct rpcb in RFC 1833 */
-    r_netid: String, /* network id */
-    r_addr: String,  /* universal address */
+    pub r_netid: String, /* network id */
+    pub r_addr: String,  /* universal address */
 }
 
 impl ClientAddr4 {
@@ -320,9 +414,9 @@ pub struct SetClientIdResultOK {
 
 #[derive(Debug, Serialize)]
 pub struct NFS4CompoundProcedure {
-    tag: String,
-    minorversion: u32,
-    argarray: Vec<NFSArgOp4>,
+    pub tag: String,
+    pub minorversion: u32,
+    pub argarray: Vec<NFSArgOp4>,
 }
 
 impl NFS4CompoundProcedure {
@@ -343,6 +437,12 @@ impl NFS4CompoundProcedure {
     }
 }
 
+impl Default for NFS4CompoundProcedure {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SetClientIdConfirm4Args {
     pub client_id: ClientId4,
@@ -355,19 +455,19 @@ pub struct SetClientIdConfirm4Result {
 }
 
 #[derive(Debug, Deserialize)]
-struct PutRootFH4Result {
+pub struct PutRootFH4Result {
     /* CURRENT_FH: root fh */
-    status: NFSStat4,
+    pub status: NFSStat4,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ReadDir4Args {
     /* CURRENT_FH: directory */
-    cookie: NFSCookie4,
-    cookie_verf: Verifier4,
-    dircount: Count4, // maximum number of bytes of directory information that should be returned
-    maxcount: Count4, //
-    attr_request: BitMap4,
+    pub cookie: NFSCookie4,
+    pub cookie_verf: Verifier4,
+    pub dircount: Count4, // maximum number of bytes of directory information that should be returned
+    pub maxcount: Count4, //
+    pub attr_request: BitMap4,
 }
 
 impl ReadDir4Args {
@@ -386,22 +486,22 @@ impl ReadDir4Args {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Entry4 {
-    cookie: NFSCookie4,
-    name: Component4,
-    attrs: FAttr4,
-    next_entry: Option<Box<Entry4>>,
+    pub cookie: NFSCookie4,
+    pub name: Component4,
+    pub attrs: FAttr4,
+    pub next_entry: Option<Box<Entry4>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DirList4 {
-    entries: Option<Box<Entry4>>,
-    eof: bool,
+    pub entries: Option<Box<Entry4>>,
+    pub eof: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReadDir4ResultOk {
-    cookie_verf: Verifier4,
-    reply: DirList4,
+    pub cookie_verf: Verifier4,
+    pub reply: DirList4,
 }
 
 impl ReadDir4ResultOk {
@@ -454,18 +554,18 @@ impl LookUp4Args {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct LookUp4Res {
+pub struct LookUp4Result {
     status: NFSStat4,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct Open4Args {
-    seqid: SeqId4,
-    share_access: u32,
-    share_deny: u32,
-    owner: OpenOwner,
-    openhow: OpenFlag4,
-    claim: OpenClaim4,
+    pub seq_id: SeqId4,
+    pub share_access: u32,
+    pub share_deny: u32,
+    pub owner: OpenOwner,
+    pub open_how: OpenFlag4,
+    pub claim: OpenClaim4,
 }
 
 pub mod open_params {
@@ -480,49 +580,34 @@ pub mod open_params {
 }
 
 impl Open4Args {
-    pub fn simple_open(session: &NFSClientSession) -> Self {
+    pub fn simple_open(session: &NFSClientSession, filename: &str) -> Self {
         let owner = OpenOwner {
             client_id: session.client_id,
             owner: ByteBuf::from(b"simple_open"),
         };
         Self {
-            seqid: 0,
+            seq_id: 0,
             share_access: open_params::OPEN4_SHARE_ACCESS_READ,
             share_deny: 0,
             owner,
-            openhow: OpenFlag4::OPEN4_CREATE(CreateHow4::GUARDED4(FAttr4::empty_attr())),
-            claim: OpenClaim4::CLAIM_NULL(ByteBuf::from("")),
+            open_how: OpenFlag4::OPEN4_NOCREATE,
+            claim: OpenClaim4::CLAIM_NULL(ByteBuf::from(filename)),
         }
     }
 }
 
 #[derive(Debug, Serialize, Clone)]
-struct OpenOwner {
-    client_id: ClientId4,
-    owner: Opaque, // with length limit of NFS4_OPAQUE_LIMIT
+pub struct OpenOwner {
+    pub client_id: ClientId4,
+    pub owner: Opaque, // with length limit of NFS4_OPAQUE_LIMIT
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 #[repr(u32)]
 pub enum OpenFlag4 {
+    OPEN4_NOCREATE,
     OPEN4_CREATE(CreateHow4),
     Default,
-}
-
-impl Serialize for OpenFlag4 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::OPEN4_CREATE(ch) => {
-                serializer.serialize_newtype_variant("OpenFlag4", 1, "OPEN4_CREATE", ch)
-            }
-            Self::Default => {
-                unimplemented!()
-            }
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -574,14 +659,257 @@ pub enum OpenDelegationType4 {
 }
 
 #[derive(Debug, Serialize, Clone)]
-struct OpenClaimDelegateCur4 {
-    delegate_stateid: StateId4,
-    file: Component4,
+pub struct OpenClaimDelegateCur4 {
+    pub delegate_stateid: StateId4,
+    pub file: Component4,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StateId4 {
-    seq_id: u32,
+    pub seq_id: u32,
     #[serde(with = "serde_xdr::opaque_data::fixed_length")]
-    other: [u8; NFS4_OTHER_SIZE],
+    pub other: [u8; NFS4_OTHER_SIZE],
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenReadDelegation4 {
+    pub state_id: StateId4,   /* Stateid for delegation */
+    pub recall: bool, /* Pre-recalled flag for delegations obtained by reclaim (CLAIM_PREVIOUS) */
+    pub permissions: NFSAce4, /* Defines users who don't need an ACCESS call to open for read */
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenWriteDelegation4 {
+    pub state_id: StateId4, /* Stateid for delegation */
+    pub recall: bool,       /* Pre-recalled flag for
+                            delegations obtained
+                            by reclaim
+                            (CLAIM_PREVIOUS) */
+    pub space_limit: NFSSpaceLimit4, /* Defines condition that
+                                     the client must check to
+                                     determine whether the
+                                     file needs to be flushed
+                                     to the server on close */
+
+    pub permissions: NFSAce4, /* Defines users who don't
+                              need an ACCESS call as
+                              part of a delegated
+                              open */
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NFSModifiedLimit4 {
+    pub num_blocks: u32,
+    pub bytes_per_block: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum NFSSpaceLimit4 {
+    /* limit specified as file size */
+    NFS_LIMIT_SIZE(u64),
+    /* limit specified by number of blocks */
+    NFS_LIMIT_BLOCKS(NFSModifiedLimit4),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NFSAce4 {
+    r#type: AceType4,
+    flag: AceFlag4,
+    access_mask: AceMask4,
+    who: Utf8StrMixed,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum OpenDelegation4 {
+    OPEN_DELEGATE_NONE,
+    OPEN_DELEGATE_READ(OpenReadDelegation4),
+    OPEN_DELEGATE_WRITE(OpenWriteDelegation4),
+}
+
+#[derive(Debug)]
+pub enum Open4Result {
+    NFS4_OK(Open4ResultOk),
+    Default,
+}
+
+struct Open4ResultVisitor {}
+
+impl<'de> Visitor<'de> for Open4ResultVisitor {
+    type Value = Open4Result;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting Open4Result")
+    }
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::EnumAccess<'de>,
+    {
+        let (descriminant, v): (u32, _) = data.variant()?;
+        match descriminant {
+            0 => {
+                let ok_val = v.newtype_variant()?;
+                Ok(Open4Result::NFS4_OK(ok_val))
+            }
+            _ => Ok(Open4Result::Default),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Open4Result {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_enum(
+            "Open4Result",
+            &["NFS4_OK", "Default"],
+            Open4ResultVisitor {},
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Open4ResultOk {
+    pub state_id: StateId4,          /* Stateid for open */
+    pub cinfo: ChangeInfo4,          /* Directory change info */
+    pub rflags: u32,                 /* Result flags */
+    pub attrset: BitMap4,            /* attribute set for create */
+    pub delegation: OpenDelegation4, /* Info on any open delegation */
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangeInfo4 {
+    pub atomic: bool,
+    pub before: ChangeId4,
+    pub after: ChangeId4,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetFH4ResultOk {
+    pub object: NFSFH4,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum GetFH4Result {
+    NFS4_OK(GetFH4ResultOk),
+    Default,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Read4Args {
+    pub state_id: StateId4,
+    pub offset: Offset4,
+    pub count: Count4,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Read4ResultOk {
+    pub eof: bool,
+    pub data: Opaque,
+}
+
+#[derive(Debug)]
+pub enum Read4Result {
+    NFS4_OK(Read4ResultOk),
+    Default,
+}
+
+struct Read4ResultVisitor;
+
+impl<'de> Visitor<'de> for Read4ResultVisitor {
+    type Value = Read4Result;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting Read4Result")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::EnumAccess<'de>,
+    {
+        let (descriminant, v): (u32, _) = data.variant()?;
+        match descriminant {
+            0 => {
+                let ok_val = v.newtype_variant()?;
+                Ok(Read4Result::NFS4_OK(ok_val))
+            }
+            _ => Ok(Read4Result::Default),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Read4Result {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_enum(
+            "Read4Result",
+            &["NFS4_OK", "Default"],
+            Read4ResultVisitor {},
+        )
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PutFH4Args {
+    pub object: NFSFH4,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PutFH4Result {
+    /* CURRENT_FH: */
+    pub status: NFSStat4,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OpenConfirm4Args {
+    /* CURRENT_FH: opened file */
+    pub open_stateid: StateId4,
+    pub seq_id: SeqId4,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OpenConfirm4ResultOk {
+    pub open_stateid: StateId4,
+}
+
+#[derive(Debug)]
+pub enum OpenConfirm4Result {
+    NFS4_OK(OpenConfirm4ResultOk),
+    Default,
+}
+
+struct OpenConfirm4ResultVisitor {}
+
+impl<'de> Visitor<'de> for OpenConfirm4ResultVisitor {
+    type Value = OpenConfirm4Result;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting OpenConfirm4ResultVisitor")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::EnumAccess<'de>,
+    {
+        let (descriminant, v): (u32, _) = data.variant()?;
+        match descriminant {
+            0 => {
+                let ok_val = v.newtype_variant()?;
+                Ok(OpenConfirm4Result::NFS4_OK(ok_val))
+            }
+            _ => Ok(OpenConfirm4Result::Default),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OpenConfirm4Result {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_enum(
+            "OpenConfirm4Result",
+            &["NFS4_OK", "Default"],
+            OpenConfirm4ResultVisitor {},
+        )
+    }
 }

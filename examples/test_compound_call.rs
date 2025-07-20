@@ -1,15 +1,15 @@
-use std::{path::Path, thread::sleep, time::Duration};
+use std::path::Path;
 
 use nfscrs::{NFSClientBuilder, nfscrs_types::AbsolutePath};
 
 fn main() {
-    let mut client_builder = NFSClientBuilder::new(1000, 1000, "127.0.0.1:2049".parse().unwrap());
+    let client_builder = NFSClientBuilder::new(1000, 1000, "127.0.0.1:2049".parse().unwrap());
     let mut session = client_builder
         .establish_session()
         .expect("failed to establish session");
     // let attrs = session.test_get_attr().unwrap();
     let v = session
-        .list_dir(&AbsolutePath::try_from(Path::new("/")).unwrap())
+        .list_dir(&AbsolutePath::try_from(Path::new("/note.md")).unwrap())
         .unwrap();
     for i in v{
         println!("{:?}", i);

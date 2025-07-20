@@ -2,7 +2,7 @@ use crate::xdr_types::Opaque;
 
 pub type AttrList4 = Opaque;
 pub type BitMap4 = Vec<u32>;
-pub type Changeid4 = u64;
+pub type ChangeId4 = u64;
 pub type ClientId4 = u64;
 pub type Count4 = u32;
 pub type Length4 = u64;
@@ -24,6 +24,14 @@ pub type LinkText4 = Opaque;
 pub type AsciiRequired4 = Utf8String;
 pub type NfsLockId4 = u64;
 pub type PathName4 = Vec<Component4>;
+
+
+
+pub type AceType4 = u32;
+pub type AceFlag4 = u32;
+pub type AceMask4 = u32;
+
+
 
 pub const NFS4_FHSIZE: usize = 128;
 pub const NFS4_VERIFIER_SIZE: usize = 8;

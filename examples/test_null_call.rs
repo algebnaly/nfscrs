@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use nfscrs::NFSClientBuilder;
 
 fn main() {
