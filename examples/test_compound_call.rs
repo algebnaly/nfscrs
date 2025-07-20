@@ -9,10 +9,10 @@ fn main() {
         .expect("failed to establish session");
     // let attrs = session.test_get_attr().unwrap();
     let v = session
-        .list_dir(&AbsolutePath::try_from(Path::new("/note.md")).unwrap())
+        .list_dir(&AbsolutePath::try_from(Path::new("/")).unwrap())
         .unwrap();
     for i in v{
-        println!("{:?}", i);
+        println!("{}", String::from_utf8_lossy(&i.name));
     }
     // session.put_root_fh().unwrap();
     // let attrs = session.get_attr(vec![1]).unwrap();

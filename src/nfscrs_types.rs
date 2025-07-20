@@ -66,8 +66,8 @@ impl<'a> Deref for AbsolutePath<'a> {
 
 #[derive(Debug, Clone)]
 pub struct DirEntry {
-    name: Component4,
-    attrs: FAttr4,
+    pub name: Component4,
+    pub attrs: FAttr4,
 }
 
 impl DirEntry {
