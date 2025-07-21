@@ -25,13 +25,9 @@ pub type AsciiRequired4 = Utf8String;
 pub type NfsLockId4 = u64;
 pub type PathName4 = Vec<Component4>;
 
-
-
 pub type AceType4 = u32;
 pub type AceFlag4 = u32;
 pub type AceMask4 = u32;
-
-
 
 pub const NFS4_FHSIZE: usize = 128;
 pub const NFS4_VERIFIER_SIZE: usize = 8;

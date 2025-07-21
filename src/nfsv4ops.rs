@@ -5,7 +5,7 @@ use serde::{
 use serde_bytes::ByteBuf;
 
 use crate::{
-    NFSCRSInnerError, NFSClientSession,
+    NFSCRSInnerError, NFSClientSession, OpenOptions,
     nfs4types::{
         AceFlag4, AceMask4, AceType4, AttrList4, BitMap4, ChangeId4, ClientId4, Component4, Count4,
         NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4, Utf8StrMixed,
@@ -56,7 +56,7 @@ pub enum NFSArgOp4 {
     OP_SETCLIENTID(SetClientId4Args),                //SETCLIENTID4args opsetclientid;
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
     OP_VERIFY,                                       //VERIFY4args opverify;
-    OP_WRITE,                                        //WRITE4args opwrite;
+    OP_WRITE(Write4Args),                            //WRITE4args opwrite;
     OP_RELEASE_LOCKOWNER,                            //RELEASE_LOCKOWNER4args oprelease_lockowner;
     OP_ILLEGAL,                                      //void;// well, this is actually 10044
 }
@@ -101,7 +101,7 @@ pub enum NFSResultOp4 {
     OP_SETCLIENTID(SetClientId4Result),
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Result),
     OP_VERIFY,
-    OP_WRITE,
+    OP_WRITE(Write4Result),
     OP_RELEASE_LOCKOWNER,
     OP_ILLEGAL,
 }
@@ -594,6 +594,43 @@ impl Open4Args {
             claim: OpenClaim4::CLAIM_NULL(ByteBuf::from(filename)),
         }
     }
+
+    pub fn with_open_options(
+        session: &NFSClientSession,
+        filename: &str,
+        open_options: OpenOptions,
+    ) -> Self {
+        let owner = OpenOwner {
+            client_id: session.client_id,
+            owner: ByteBuf::from(b"open"),
+        };
+
+        let share_access = if open_options.read && !open_options.write {
+            open_params::OPEN4_SHARE_ACCESS_READ
+        } else if !open_options.read && open_options.write {
+            open_params::OPEN4_SHARE_ACCESS_WRITE
+        } else {
+            open_params::OPEN4_SHARE_ACCESS_BOTH
+        };
+
+        let open_how = if open_options.create {
+            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(FAttr4 {
+                attr_mask: Vec::new(),
+                attr_vals: ByteBuf::new(),
+            }))
+        } else {
+            OpenFlag4::OPEN4_NOCREATE
+        };
+
+        Self {
+            seq_id: 0,
+            share_access,
+            share_deny: 0,
+            owner,
+            open_how,
+            claim: OpenClaim4::CLAIM_NULL(ByteBuf::from(filename)),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -883,7 +920,7 @@ struct OpenConfirm4ResultVisitor {}
 impl<'de> Visitor<'de> for OpenConfirm4ResultVisitor {
     type Value = OpenConfirm4Result;
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting OpenConfirm4ResultVisitor")
+        formatter.write_str("expecting OpenConfirm4Result")
     }
 
     fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
@@ -910,6 +947,71 @@ impl<'de> Deserialize<'de> for OpenConfirm4Result {
             "OpenConfirm4Result",
             &["NFS4_OK", "Default"],
             OpenConfirm4ResultVisitor {},
+        )
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum StableHow4 {
+    UNSTABLE4 = 0,
+    DATA_SYNC4 = 1,
+    FILE_SYNC4 = 2,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Write4Args {
+    /* CURRENT_FH: file */
+    pub state_id: StateId4,
+    pub offset: Offset4,
+    pub stable: StableHow4,
+    pub data: Opaque,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Write4ResultOk {
+    pub count: Count4,
+    pub committed: StableHow4,
+    pub writeverf: Verifier4,
+}
+
+#[derive(Debug)]
+pub enum Write4Result {
+    NFS4_OK(Write4ResultOk),
+    Default,
+}
+
+struct Write4ResultVisitor {}
+
+impl<'de> Visitor<'de> for Write4ResultVisitor {
+    type Value = Write4Result;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting Write4Result")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::EnumAccess<'de>,
+    {
+        let (descriminant, v): (u32, _) = data.variant()?;
+        match descriminant {
+            0 => {
+                let ok_val = v.newtype_variant()?;
+                Ok(Write4Result::NFS4_OK(ok_val))
+            }
+            _ => Ok(Write4Result::Default),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Write4Result {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_enum(
+            "Write4Result",
+            &["NFS4_OK", "Default"],
+            Write4ResultVisitor {},
         )
     }
 }

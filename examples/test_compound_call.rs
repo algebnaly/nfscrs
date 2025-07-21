@@ -11,7 +11,7 @@ fn main() {
     let v = session
         .list_dir(&AbsolutePath::try_from(Path::new("/")).unwrap())
         .unwrap();
-    for i in v{
+    for i in v {
         println!("{}", String::from_utf8_lossy(&i.name));
     }
     // session.put_root_fh().unwrap();

@@ -1,15 +1,15 @@
+use onc_rpc::{Bytes, Error as ONCRPCError, RpcMessage};
 use std::io;
 use std::io::Read;
-use onc_rpc::{Bytes, RpcMessage, Error as ONCRPCError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum ONCRPCMessageReaderError{
+pub enum ONCRPCMessageReaderError {
     #[error("failed to read from tcp")]
     StreamReadError(#[from] io::Error),
 
     #[error("failed to parse rpc message")]
-    MessageParseError(#[from] ONCRPCError)
+    MessageParseError(#[from] ONCRPCError),
 }
 
 pub struct ONCRPCMessageReader {
@@ -25,7 +25,10 @@ impl ONCRPCMessageReader {
         }
     }
     /// Read a RpcMessage, blocking
-    pub fn read<R: Read>(&mut self, stream: &mut R) -> Result<RpcMessage<Bytes, Bytes>, ONCRPCMessageReaderError> {
+    pub fn read<R: Read>(
+        &mut self,
+        stream: &mut R,
+    ) -> Result<RpcMessage<Bytes, Bytes>, ONCRPCMessageReaderError> {
         // First, check whether the data in self.buf can form a complete RpcMessage
         let mut temp_buf = [0u8; 256];
         const RM_LEN: usize = 4; //Record Marking Length in bytes
@@ -46,16 +49,22 @@ impl ONCRPCMessageReader {
                         .drain(..RM_LEN + fragment_len as usize);
                     if is_last_fragment {
                         let msg_result =
-                            RpcMessage::try_from(Bytes::copy_from_slice(&self.message_parts_buf)).map_err(ONCRPCMessageReaderError::from);
-                        self.message_parts_buf.clear();//we need clear message_parts_buf here
+                            RpcMessage::try_from(Bytes::copy_from_slice(&self.message_parts_buf))
+                                .map_err(ONCRPCMessageReaderError::from);
+                        self.message_parts_buf.clear(); //we need clear message_parts_buf here
                         return msg_result;
                     }
                 }
             }
             //read more data
-            let count = stream.read(&mut temp_buf).map_err(ONCRPCMessageReaderError::from)?;
-            if count == 0 {// this is necessary for if Stream is closed, it will return Ok(0) rather than Err,
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed").into())
+            let count = stream
+                .read(&mut temp_buf)
+                .map_err(ONCRPCMessageReaderError::from)?;
+            if count == 0 {
+                // this is necessary for if Stream is closed, it will return Ok(0) rather than Err,
+                return Err(
+                    io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed").into(),
+                );
             }
             self.fragment_parts_buf.extend(temp_buf[..count].iter());
         }

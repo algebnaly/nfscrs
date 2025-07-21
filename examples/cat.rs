@@ -1,7 +1,6 @@
 use std::io::Write;
 
-use nfscrs::NFSClientBuilder;
-
+use nfscrs::{NFSClientBuilder, OpenOptions};
 
 fn main() {
     let client_builder = NFSClientBuilder::new(1000, 1000, "127.0.0.1:2049".parse().unwrap());
@@ -9,7 +8,10 @@ fn main() {
         .establish_session()
         .expect("failed to establish session");
 
-    let opening_file = session.open(&"/note.md".try_into().unwrap()).unwrap();
+    let open_opt = OpenOptions::new().read(true);
+    let opening_file = session
+        .open(&"/note.md".try_into().unwrap(), open_opt)
+        .unwrap();
     let mut opened_file = session.open_confirm(opening_file).unwrap();
     let mut buf: Vec<u8> = Vec::new();
     loop {

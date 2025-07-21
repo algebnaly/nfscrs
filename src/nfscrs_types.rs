@@ -14,7 +14,7 @@ impl<'a> AbsolutePath<'a> {
     pub fn as_cow(&self) -> &Cow<'a, Path> {
         &self.0
     }
-    pub fn into_owned(self) -> AbsolutePath<'static>{
+    pub fn into_owned(self) -> AbsolutePath<'static> {
         AbsolutePath(Cow::Owned(self.0.into_owned()))
     }
 }
@@ -52,6 +52,15 @@ impl<'a> TryFrom<&'a str> for AbsolutePath<'a> {
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         let path = Path::new(value);
+        Self::try_from(path)
+    }
+}
+
+impl TryFrom<String> for AbsolutePath<'static> {
+    type Error = NFSCRSInnerError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let path = PathBuf::from(value);
         Self::try_from(path)
     }
 }
