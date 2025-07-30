@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::xdr_types::Opaque;
 
 pub type AttrList4 = Opaque;
@@ -24,6 +26,18 @@ pub type LinkText4 = Opaque;
 pub type AsciiRequired4 = Utf8String;
 pub type NfsLockId4 = u64;
 pub type PathName4 = Vec<Component4>;
+
+
+#[derive(Debug, Serialize)]
+pub struct SpecData4 {
+    pub spec_data_1: u32, /* major device number */
+    pub spec_data_2: u32, /* minor device number */
+}
+
+pub struct fsid4 {
+    pub major: u64,
+    pub minor: u64,
+}
 
 pub type AceType4 = u32;
 pub type AceFlag4 = u32;

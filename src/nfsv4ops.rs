@@ -8,7 +8,8 @@ use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
     nfs4types::{
         AceFlag4, AceMask4, AceType4, AttrList4, BitMap4, ChangeId4, ClientId4, Component4, Count4,
-        NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4, Utf8StrMixed,
+        LinkText4, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4,
+        SpecData4, Utf8StrMixed,
     },
     nfscrs_types::DirEntry,
     xdr_types::Opaque,
@@ -24,7 +25,7 @@ pub enum NFSArgOp4 {
     OP_ACCESS,                                       //ACCESS4args opaccess;
     OP_CLOSE,                                        //CLOSE4args opclose;
     OP_COMMIT,                                       //COMMIT4args opcommit;
-    OP_CREATE,                                       //CREATE4args opcreate;
+    OP_CREATE(Create4Args),                          //CREATE4args opcreate;
     OP_DELEGPURGE,                                   //DELEGPURGE4args opdelegpurge;
     OP_DELEGRETURN,                                  //DELEGRETURN4args opdelegreturn;
     OP_GETATTR(GetAttr4Args),                        //GETATTR4args opgetattr;
@@ -69,7 +70,7 @@ pub enum NFSResultOp4 {
     OP_ACCESS,
     OP_CLOSE,
     OP_COMMIT,
-    OP_CREATE,
+    OP_CREATE(Create4Result),
     OP_DELEGPURGE,
     OP_DELEGRETURN,
     OP_GETATTR(GetAttr4Result),
@@ -1014,4 +1015,70 @@ impl<'de> Deserialize<'de> for Write4Result {
             Write4ResultVisitor {},
         )
     }
+}
+
+#[derive(Debug, Serialize)]
+pub enum CreateType4 {
+    NF4LNK(LinkText4),
+    NF4BLK(SpecData4),
+    NF4CHR(SpecData4),
+    NF4SOCK,
+    NF4FIFO,
+    NF4DIR,
+    Default,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Create4Args {
+    obj_type: CreateType4,
+    obj_name: Component4,
+    create_attrs: FAttr4,
+}
+
+#[derive(Debug)]
+pub enum Create4Result {
+    NFS4_OK(Create4ResultOk),
+    Default,
+}
+
+struct Create4ResultVisitor {}
+
+impl<'de> Visitor<'de> for Create4ResultVisitor {
+    type Value = Create4Result;
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("expecting Create4ResultVisitor")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::EnumAccess<'de>,
+    {
+        let (descriminant, v): (u32, _) = data.variant()?;
+        match descriminant {
+            0 => {
+                let ok_val = v.newtype_variant()?;
+                Ok(Create4Result::NFS4_OK(ok_val))
+            }
+            _ => Ok(Create4Result::Default),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Create4Result {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_enum(
+            "Create4Result",
+            &["NFS4_OK", "Default"],
+            Create4ResultVisitor {},
+        )
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Create4ResultOk {
+    pub cinfo: ChangeInfo4,
+    pub attr_set: BitMap4, /* attributes set */
 }

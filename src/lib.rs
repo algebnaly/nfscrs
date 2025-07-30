@@ -568,6 +568,9 @@ impl NFSClientSession {
             writeverf: write_result_ok.writeverf,
         })
     }
+    pub fn mkdir(&mut self, _path: AbsolutePath, _parents: bool, _exists_ok: bool) {
+        todo!()
+    }
 }
 
 pub fn push_lookup_ops(

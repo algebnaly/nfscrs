@@ -2,7 +2,6 @@ use nfscrs::NFSClientBuilder;
 use nfscrs::OpenOptions;
 use std::env;
 use std::io::Read;
-use std::io::Write;
 
 fn main() {
     let client_builder = NFSClientBuilder::new(1000, 1000, "127.0.0.1:2049".parse().unwrap());
