@@ -3,6 +3,7 @@ use serde::{
     de::{self, VariantAccess, Visitor},
 };
 use serde_bytes::ByteBuf;
+use xdr_brk::XDREnumDeserialize;
 
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
@@ -314,7 +315,7 @@ pub const NFS4_VERIFIER_SIZE: usize = 8;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
 pub struct Verifier4 {
-    #[serde(with = "serde_xdr::opaque_data::fixed_length")]
+    #[serde(with = "xdr_brk::fixed_length_bytes")]
     pub verifier4: [u8; NFS4_VERIFIER_SIZE],
 }
 
@@ -326,11 +327,13 @@ impl Verifier4 {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum SetClientId4Result {
     NFS4_OK(SetClientIdResultOK),
     NFS4ERR_CLID_INUSE(ClientAddr4), //this has to be fix!
-    DefaultArm,
+    #[default_arm]
+    DefaultArm(u32), // we need to handle default arm in the result,
+        //this will be done in xdr_brk_enum crate, which provides a attribute macro to do this.
 }
 
 #[derive(Debug, Serialize)]
@@ -434,7 +437,7 @@ impl NFS4CompoundProcedure {
         self.argarray.push(op);
     }
     pub fn to_bytes(&self) -> Result<Vec<u8>, NFSCRSInnerError> {
-        serde_xdr::to_bytes(&self).map_err(NFSCRSInnerError::from)
+        xdr_brk::to_bytes(&self).map_err(NFSCRSInnerError::from)
     }
 }
 
@@ -705,7 +708,7 @@ pub struct OpenClaimDelegateCur4 {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StateId4 {
     pub seq_id: u32,
-    #[serde(with = "serde_xdr::opaque_data::fixed_length")]
+    #[serde(with = "xdr_brk::fixed_length_bytes")]
     pub other: [u8; NFS4_OTHER_SIZE],
 }
 

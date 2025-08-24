@@ -78,10 +78,8 @@ pub enum NFSCRSError {
 pub enum NFSCRSInnerError {
     #[error("invalied argument: {0}")]
     InvalidArgument(String),
-    #[error("serde_xdr serialization error: {0}")]
-    SerError(#[from] serde_xdr::CompatSerializationError),
-    #[error("serde_xdr deserialization error: {0}")]
-    DeserError(#[from] serde_xdr::CompatDeserializationError),
+    #[error("xdr serialization error: {0}")]
+    XDRSederError(#[from] xdr_brk::Error),
     #[error("wrong message type: {0}")]
     WrongMessageType(String),
     #[error("wrong operation reply type: {0}")]
@@ -261,7 +259,7 @@ pub fn read_compound_result<T: AsRef<[u8]>, P: AsRef<[u8]>>(
     reply_message: &RpcMessage<T, P>,
 ) -> Result<Compound4Result, NFSCRSInnerError> {
     let reply_message = read_reply_body(reply_message)?;
-    serde_xdr::from_bytes(reply_message).map_err(NFSCRSInnerError::from)
+    xdr_brk::from_bytes(reply_message.as_ref()).map_err(NFSCRSInnerError::from)
 }
 
 impl NFSClientSession {
