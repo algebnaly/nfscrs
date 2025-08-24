@@ -7,6 +7,6 @@ edition = "2024"
 onc-rpc = "0.3"
 rand = "0.9.1"
 serde = { version = "1.0.219", features = ["derive", "alloc"] }
-xdr_brk = { path = "../xdr_brk" }
+xdr_brk = "0.1"
 serde_bytes = "0.11.17"
 thiserror = "2.0.12"
