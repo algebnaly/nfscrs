@@ -1,9 +1,8 @@
 use serde::{
-    Deserialize, Serialize,
-    de::{self, VariantAccess, Visitor},
+    Deserialize, Serialize
 };
 use serde_bytes::ByteBuf;
-use xdr_brk::XDREnumDeserialize;
+use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
@@ -18,7 +17,8 @@ use crate::{
 
 pub const TAG: &str = "nfscrstag";
 
-#[derive(Debug, Serialize)]
+#[repr(u32)]
+#[derive(Debug, XDREnumSerialize)]
 pub enum NFSArgOp4 {
     _PlaceHolder0,
     _PlaceHolder1,
@@ -60,7 +60,7 @@ pub enum NFSArgOp4 {
     OP_VERIFY,                                       //VERIFY4args opverify;
     OP_WRITE(Write4Args),                            //WRITE4args opwrite;
     OP_RELEASE_LOCKOWNER,                            //RELEASE_LOCKOWNER4args oprelease_lockowner;
-    OP_ILLEGAL,                                      //void;// well, this is actually 10044
+    OP_ILLEGAL = 10044,                                      //void;// well, this is actually 10044
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,8 +108,8 @@ pub enum NFSResultOp4 {
     OP_ILLEGAL,
 }
 
-#[derive(Debug, Clone)]
 #[repr(u32)]
+#[derive(Debug, Clone, XDREnumDeserialize)]
 pub enum NFSStat4 {
     NFS4_OK = 0,                         /*                0 everything is okay       */
     NFS4ERR_PERM = 1,                    /*           1 caller not privileged    */
@@ -180,101 +180,6 @@ pub enum NFSStat4 {
     NFS4ERR_CB_PATH_DOWN = 10048,        /*10048  callback path down       */
 }
 
-struct U32Vistor;
-
-impl<'de> Visitor<'de> for U32Vistor {
-    type Value = u32;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting u32")
-    }
-
-    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(v)
-    }
-}
-
-impl<'de> Deserialize<'de> for NFSStat4 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let descriminant = deserializer.deserialize_u32(U32Vistor {})?;
-        match descriminant {
-            0 => Ok(NFSStat4::NFS4_OK), /*                0 everything is okay       */
-            1 => Ok(NFSStat4::NFS4ERR_PERM), /*           1 caller not privileged    */
-            2 => Ok(NFSStat4::NFS4ERR_NOENT), /*          2 no such file/directory   */
-            5 => Ok(NFSStat4::NFS4ERR_IO), /*             5 hard I/O error           */
-            6 => Ok(NFSStat4::NFS4ERR_NXIO), /*           6 no such device           */
-            13 => Ok(NFSStat4::NFS4ERR_ACCESS), /*         13 access denied            */
-            17 => Ok(NFSStat4::NFS4ERR_EXIST), /*          17 file already exists      */
-            18 => Ok(NFSStat4::NFS4ERR_XDEV), /*           18 different file systems   */
-            19 => Ok(NFSStat4::_NFSSTAT4_UNUSED), /*19  Unused/reserved        */
-            20 => Ok(NFSStat4::NFS4ERR_NOTDIR), /*         20 should be a directory    */
-            21 => Ok(NFSStat4::NFS4ERR_ISDIR), /*          21 should not be directory  */
-            22 => Ok(NFSStat4::NFS4ERR_INVAL), /*          22 invalid argument         */
-            27 => Ok(NFSStat4::NFS4ERR_FBIG), /*           27 file exceeds server max  */
-            28 => Ok(NFSStat4::NFS4ERR_NOSPC), /*          28 no space on file system  */
-            30 => Ok(NFSStat4::NFS4ERR_ROFS), /*           30 read-only file system    */
-            31 => Ok(NFSStat4::NFS4ERR_MLINK), /*          31 too many hard links      */
-            63 => Ok(NFSStat4::NFS4ERR_NAMETOOLONG), /*    63 name exceeds server max  */
-            66 => Ok(NFSStat4::NFS4ERR_NOTEMPTY), /*       66 directory not empty      */
-            69 => Ok(NFSStat4::NFS4ERR_DQUOT), /*          69 hard quota limit reached */
-            70 => Ok(NFSStat4::NFS4ERR_STALE), /*          70 file no longer exists    */
-            10001 => Ok(NFSStat4::NFS4ERR_BADHANDLE), /*      10001 Illegal filehandle       */
-            10003 => Ok(NFSStat4::NFS4ERR_BAD_COOKIE), /*     10003 READDIR cookie is stale  */
-            10004 => Ok(NFSStat4::NFS4ERR_NOTSUPP), /*        10004 operation not supported  */
-            10005 => Ok(NFSStat4::NFS4ERR_TOOSMALL), /*       10005 response limit exceeded  */
-            10006 => Ok(NFSStat4::NFS4ERR_SERVERFAULT), /*    10006 undefined server error   */
-            10007 => Ok(NFSStat4::NFS4ERR_BADTYPE), /*        10007 type invalid for CREATE  */
-            10008 => Ok(NFSStat4::NFS4ERR_DELAY), /*          10008 file "busy" - retry      */
-            10009 => Ok(NFSStat4::NFS4ERR_SAME), /*           10009 nverify says attrs same  */
-            10010 => Ok(NFSStat4::NFS4ERR_DENIED), /*         10010 lock unavailable         */
-            10011 => Ok(NFSStat4::NFS4ERR_EXPIRED), /*        10011 lock lease expired       */
-            10012 => Ok(NFSStat4::NFS4ERR_LOCKED), /*         10012 I/O failed due to lock   */
-            10013 => Ok(NFSStat4::NFS4ERR_GRACE), /*          10013 in grace period          */
-            10014 => Ok(NFSStat4::NFS4ERR_FHEXPIRED), /*      10014 filehandle expired       */
-            10015 => Ok(NFSStat4::NFS4ERR_SHARE_DENIED), /*   10015 share reserve denied     */
-            10016 => Ok(NFSStat4::NFS4ERR_WRONGSEC), /*       10016 wrong security flavor    */
-            10017 => Ok(NFSStat4::NFS4ERR_CLID_INUSE), /*     10017 clientid in use          */
-            10018 => Ok(NFSStat4::NFS4ERR_RESOURCE), /*       10018 resource exhaustion      */
-            10019 => Ok(NFSStat4::NFS4ERR_MOVED), /*          10019 file system relocated    */
-            10020 => Ok(NFSStat4::NFS4ERR_NOFILEHANDLE), /*   10020 current FH is not set    */
-            10021 => Ok(NFSStat4::NFS4ERR_MINOR_VERS_MISMATCH), /* 10021 minor vers not supp */
-            10022 => Ok(NFSStat4::NFS4ERR_STALE_CLIENTID), /* 10022 server has rebooted      */
-            10023 => Ok(NFSStat4::NFS4ERR_STALE_STATEID), /*  10023 server has rebooted      */
-            10024 => Ok(NFSStat4::NFS4ERR_OLD_STATEID), /*    10024 state is out of sync     */
-            10025 => Ok(NFSStat4::NFS4ERR_BAD_STATEID), /*    10025 incorrect stateid        */
-            10026 => Ok(NFSStat4::NFS4ERR_BAD_SEQID), /*      10026 request is out of seq.   */
-            10027 => Ok(NFSStat4::NFS4ERR_NOT_SAME), /*       10027 verify - attrs not same  */
-            10028 => Ok(NFSStat4::NFS4ERR_LOCK_RANGE), /*     10028 lock range not supported */
-            10029 => Ok(NFSStat4::NFS4ERR_SYMLINK), /*        10029 should be file/directory */
-            10030 => Ok(NFSStat4::NFS4ERR_RESTOREFH), /*      10030 no saved filehandle      */
-            10031 => Ok(NFSStat4::NFS4ERR_LEASE_MOVED), /*    10031 some file system moved   */
-            10032 => Ok(NFSStat4::NFS4ERR_ATTRNOTSUPP), /*    10032 recommended attr not sup */
-            10033 => Ok(NFSStat4::NFS4ERR_NO_GRACE), /*       10033 reclaim outside of grace */
-            10034 => Ok(NFSStat4::NFS4ERR_RECLAIM_BAD), /*    10034 reclaim error at server  */
-            10035 => Ok(NFSStat4::NFS4ERR_RECLAIM_CONFLICT), /* 10035 conflict on reclaim    */
-            10036 => Ok(NFSStat4::NFS4ERR_BADXDR), /*         10036 XDR decode failed        */
-            10037 => Ok(NFSStat4::NFS4ERR_LOCKS_HELD), /*     10037 file locks held at CLOSE */
-            10038 => Ok(NFSStat4::NFS4ERR_OPENMODE), /*       10038 conflict in OPEN and I/O */
-            10039 => Ok(NFSStat4::NFS4ERR_BADOWNER), /*       10039 owner translation bad    */
-            10040 => Ok(NFSStat4::NFS4ERR_BADCHAR), /*        10040 UTF-8 char not supported */
-            10041 => Ok(NFSStat4::NFS4ERR_BADNAME), /*        10041 name not supported       */
-            10042 => Ok(NFSStat4::NFS4ERR_BAD_RANGE), /*      10042 lock range not supported */
-            10043 => Ok(NFSStat4::NFS4ERR_LOCK_NOTSUPP), /*   10043 no atomic up/downgrade   */
-            10044 => Ok(NFSStat4::NFS4ERR_OP_ILLEGAL), /*     10044 undefined operation      */
-            10045 => Ok(NFSStat4::NFS4ERR_DEADLOCK), /*       10045 file locking deadlock    */
-            10046 => Ok(NFSStat4::NFS4ERR_FILE_OPEN), /*      10046 open file blocks op.     */
-            10047 => Ok(NFSStat4::NFS4ERR_ADMIN_REVOKED), /*  10047 lock-owner state revoked */
-            10048 => Ok(NFSStat4::NFS4ERR_CB_PATH_DOWN), /*10048  callback path down       */
-            e => Err(de::Error::custom(format!("status code unknown: {e}"))),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct Compound4Result {
     pub status: NFSStat4,
@@ -288,7 +193,7 @@ impl Compound4Result {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GetAttr4Args {
     /* CURRENT_FH: directory or file */
     pub attr_request: BitMap4,
@@ -297,6 +202,11 @@ pub struct GetAttr4Args {
 impl GetAttr4Args {
     pub fn new(attr_request: BitMap4) -> Self {
         Self { attr_request }
+    }
+    pub fn filetype() -> Self{
+        Self{
+            attr_request: BitMap4::from(&[1])
+        }
     }
 }
 
@@ -333,7 +243,7 @@ pub enum SetClientId4Result {
     NFS4ERR_CLID_INUSE(ClientAddr4), //this has to be fix!
     #[default_arm]
     DefaultArm(u32), // we need to handle default arm in the result,
-        //this will be done in xdr_brk_enum crate, which provides a attribute macro to do this.
+                                     //this will be done in xdr_brk_enum crate, which provides a attribute macro to do this.
 }
 
 #[derive(Debug, Serialize)]
@@ -542,6 +452,10 @@ impl FAttr4 {
             attr_mask: Vec::new(),
             attr_vals: AttrList4::new(),
         }
+    }
+    pub fn fetch_attr(&self, val: u32) -> Result<ByteBuf, NFSCRSInnerError> {
+        
+        todo!()
     }
 }
 
@@ -767,45 +681,11 @@ pub enum OpenDelegation4 {
     OPEN_DELEGATE_WRITE(OpenWriteDelegation4),
 }
 
-#[derive(Debug)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum Open4Result {
     NFS4_OK(Open4ResultOk),
-    Default,
-}
-
-struct Open4ResultVisitor {}
-
-impl<'de> Visitor<'de> for Open4ResultVisitor {
-    type Value = Open4Result;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting Open4Result")
-    }
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::EnumAccess<'de>,
-    {
-        let (descriminant, v): (u32, _) = data.variant()?;
-        match descriminant {
-            0 => {
-                let ok_val = v.newtype_variant()?;
-                Ok(Open4Result::NFS4_OK(ok_val))
-            }
-            _ => Ok(Open4Result::Default),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Open4Result {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_enum(
-            "Open4Result",
-            &["NFS4_OK", "Default"],
-            Open4ResultVisitor {},
-        )
-    }
+    #[default_arm]
+    Default(u32),
 }
 
 #[derive(Debug, Deserialize)]
@@ -848,46 +728,11 @@ pub struct Read4ResultOk {
     pub data: Opaque,
 }
 
-#[derive(Debug)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum Read4Result {
     NFS4_OK(Read4ResultOk),
-    Default,
-}
-
-struct Read4ResultVisitor;
-
-impl<'de> Visitor<'de> for Read4ResultVisitor {
-    type Value = Read4Result;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting Read4Result")
-    }
-
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::EnumAccess<'de>,
-    {
-        let (descriminant, v): (u32, _) = data.variant()?;
-        match descriminant {
-            0 => {
-                let ok_val = v.newtype_variant()?;
-                Ok(Read4Result::NFS4_OK(ok_val))
-            }
-            _ => Ok(Read4Result::Default),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Read4Result {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_enum(
-            "Read4Result",
-            &["NFS4_OK", "Default"],
-            Read4ResultVisitor {},
-        )
-    }
+    #[default_arm]
+    Default(u32),
 }
 
 #[derive(Debug, Serialize)]
@@ -913,46 +758,11 @@ pub struct OpenConfirm4ResultOk {
     pub open_stateid: StateId4,
 }
 
-#[derive(Debug)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum OpenConfirm4Result {
     NFS4_OK(OpenConfirm4ResultOk),
-    Default,
-}
-
-struct OpenConfirm4ResultVisitor {}
-
-impl<'de> Visitor<'de> for OpenConfirm4ResultVisitor {
-    type Value = OpenConfirm4Result;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting OpenConfirm4Result")
-    }
-
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::EnumAccess<'de>,
-    {
-        let (descriminant, v): (u32, _) = data.variant()?;
-        match descriminant {
-            0 => {
-                let ok_val = v.newtype_variant()?;
-                Ok(OpenConfirm4Result::NFS4_OK(ok_val))
-            }
-            _ => Ok(OpenConfirm4Result::Default),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for OpenConfirm4Result {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_enum(
-            "OpenConfirm4Result",
-            &["NFS4_OK", "Default"],
-            OpenConfirm4ResultVisitor {},
-        )
-    }
+    #[default_arm]
+    Default(u32),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -978,46 +788,11 @@ pub struct Write4ResultOk {
     pub writeverf: Verifier4,
 }
 
-#[derive(Debug)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum Write4Result {
     NFS4_OK(Write4ResultOk),
-    Default,
-}
-
-struct Write4ResultVisitor {}
-
-impl<'de> Visitor<'de> for Write4ResultVisitor {
-    type Value = Write4Result;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting Write4Result")
-    }
-
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::EnumAccess<'de>,
-    {
-        let (descriminant, v): (u32, _) = data.variant()?;
-        match descriminant {
-            0 => {
-                let ok_val = v.newtype_variant()?;
-                Ok(Write4Result::NFS4_OK(ok_val))
-            }
-            _ => Ok(Write4Result::Default),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Write4Result {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_enum(
-            "Write4Result",
-            &["NFS4_OK", "Default"],
-            Write4ResultVisitor {},
-        )
-    }
+    #[default_arm]
+    Default(u32),
 }
 
 #[derive(Debug, Serialize)]
@@ -1038,46 +813,11 @@ pub struct Create4Args {
     create_attrs: FAttr4,
 }
 
-#[derive(Debug)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum Create4Result {
     NFS4_OK(Create4ResultOk),
-    Default,
-}
-
-struct Create4ResultVisitor {}
-
-impl<'de> Visitor<'de> for Create4ResultVisitor {
-    type Value = Create4Result;
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("expecting Create4ResultVisitor")
-    }
-
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: de::EnumAccess<'de>,
-    {
-        let (descriminant, v): (u32, _) = data.variant()?;
-        match descriminant {
-            0 => {
-                let ok_val = v.newtype_variant()?;
-                Ok(Create4Result::NFS4_OK(ok_val))
-            }
-            _ => Ok(Create4Result::Default),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Create4Result {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        deserializer.deserialize_enum(
-            "Create4Result",
-            &["NFS4_OK", "Default"],
-            Create4ResultVisitor {},
-        )
-    }
+    #[default_arm]
+    Default(u32),
 }
 
 #[derive(Debug, Deserialize)]

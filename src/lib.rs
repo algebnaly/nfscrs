@@ -566,12 +566,51 @@ impl NFSClientSession {
             writeverf: write_result_ok.writeverf,
         })
     }
-    pub fn mkdir(&mut self, _path: AbsolutePath, _parents: bool, _exists_ok: bool) {
+    
+    pub fn mkdir(&mut self, path: AbsolutePath, _parents: bool, exists_ok: bool) -> Result<(), NFSCRSError> {
+        let mut cops = NFS4CompoundProcedure::new();
+        push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
+        let lookup_result = self.send_cops_and_get_result(&cops)?;
+        if lookup_result.is_status_ok(){
+            if exists_ok {
+                // we need check last getattr result is dir
+                let last_op = lookup_result.resarray.last().ok_or(NFSCRSInnerError::WrongOperationReply("Empty Reply".to_string()))?;
+                match last_op {
+                    NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(attr)) => {
+                        
+                    },
+                    _ => return Err(NFSCRSInnerError::WrongOperationReply("Unexpected reply".to_string()).into()),
+                }
+            } else {
+               return Err(NFSCRSError::OperationError("Item exists".to_string()))
+            }
+        }
         todo!()
     }
 }
 
-pub fn push_lookup_ops(
+fn push_lookup_and_getattr_ops(cops: &mut NFS4CompoundProcedure, path: &AbsolutePath, attr: GetAttr4Args) -> Result<(), NFSCRSInnerError> {
+    cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
+    for c in path.components() {
+        if matches!(c, Component::Normal(_)) {
+            let c_name = c
+                .as_os_str()
+                .to_str()
+                .ok_or(NFSCRSInnerError::InvalidArgument(
+                    "os_str is not utf8 str".to_owned(),
+                ))?
+                .to_owned();
+            cops.add_operation(NFSArgOp4::OP_LOOKUP(LookUp4Args::new(Opaque::from(
+                c_name.as_bytes(),
+            ))));
+            cops.add_operation(NFSArgOp4::OP_GETATTR(attr.clone()));
+        }
+    }
+    Ok(())
+}
+
+
+fn push_lookup_ops(
     cops: &mut NFS4CompoundProcedure,
     path: &AbsolutePath,
 ) -> Result<(), NFSCRSError> {
