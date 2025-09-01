@@ -1,4 +1,5 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::xdr_types::Opaque;
 
@@ -27,21 +28,74 @@ pub type AsciiRequired4 = Utf8String;
 pub type NfsLockId4 = u64;
 pub type PathName4 = Vec<Component4>;
 
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SpecData4 {
     pub spec_data_1: u32, /* major device number */
     pub spec_data_2: u32, /* minor device number */
 }
 
-pub struct fsid4 {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FSId4 {
     pub major: u64,
     pub minor: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NFSTime4 {
+    seconds: i64,
+    nseconds: u32,
+}
+
+pub mod time_how4 {
+    pub const SET_TO_SERVER_TIME4: u32 = 0;
+    pub const SET_TO_CLIENT_TIME4: u32 = 1;
+}
+
+#[derive(Debug, XDREnumSerialize, XDREnumDeserialize)]
+#[repr(u32)]
+pub enum SetTime4 {
+    SET_TO_CLIENT_TIME4(NFSTime4) = time_how4::SET_TO_CLIENT_TIME4,
+    #[default_arm]
+    Default(u32),
+}
+
+#[derive(Debug, XDREnumSerialize, XDREnumDeserialize)]
+#[repr(u32)]
+pub enum NFSFType4 {
+        NF4REG = 1,     /* Regular File */
+        NF4DIR = 2,     /* Directory */
+        NF4BLK = 3,     /* Special File - block device */
+        NF4CHR = 4,     /* Special File - character device */
+        NF4LNK = 5,     /* Symbolic Link */
+        NF4SOCK = 6,    /* Special File - socket */
+        NF4FIFO = 7,    /* Special File - fifo */
+        NF4ATTRDIR = 8,    /* Attribute Directory */
+        NF4NAMEDATTR = 9     /* Named Attribute */
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FSLocation4 {
+        pub server: Utf8StrCis,
+        pub rootpath: PathName4,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FSLocations4 {
+        pub fs_root: PathName4,
+        pub fs_locations: Vec<FSLocation4>,
 }
 
 pub type AceType4 = u32;
 pub type AceFlag4 = u32;
 pub type AceMask4 = u32;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NFSAce4 {
+        pub type_field: AceType4,
+        pub flag: AceFlag4,
+        pub access_mask: AceMask4,
+        pub who: Utf8StrMixed,
+}
 
 pub const NFS4_FHSIZE: usize = 128;
 pub const NFS4_VERIFIER_SIZE: usize = 8;

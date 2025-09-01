@@ -1,18 +1,11 @@
-use serde::{
-    Deserialize, Serialize
-};
+use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::{
-    NFSCRSInnerError, NFSClientSession, OpenOptions,
-    nfs4types::{
-        AceFlag4, AceMask4, AceType4, AttrList4, BitMap4, ChangeId4, ClientId4, Component4, Count4,
-        LinkText4, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4,
-        SpecData4, Utf8StrMixed,
-    },
-    nfscrs_types::DirEntry,
-    xdr_types::Opaque,
+    fattr4::FAttr4, fattr4_utils::fattr4_from_options, nfs4types::{
+        AceFlag4, AceMask4, AceType4, BitMap4, ChangeId4, ClientId4, Component4, Count4, LinkText4, NFSCookie4, Offset4, SeqId4, SpecData4, Utf8StrMixed, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSFH4
+    }, nfscrs_types::DirEntry, xdr_types::Opaque, NFSCRSInnerError, NFSClientSession, OpenOptions
 };
 
 pub const TAG: &str = "nfscrstag";
@@ -60,7 +53,7 @@ pub enum NFSArgOp4 {
     OP_VERIFY,                                       //VERIFY4args opverify;
     OP_WRITE(Write4Args),                            //WRITE4args opwrite;
     OP_RELEASE_LOCKOWNER,                            //RELEASE_LOCKOWNER4args oprelease_lockowner;
-    OP_ILLEGAL = 10044,                                      //void;// well, this is actually 10044
+    OP_ILLEGAL = 10044,                              //void;// well, this is actually 10044
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,9 +196,9 @@ impl GetAttr4Args {
     pub fn new(attr_request: BitMap4) -> Self {
         Self { attr_request }
     }
-    pub fn filetype() -> Self{
-        Self{
-            attr_request: BitMap4::from(&[1])
+    pub fn filetype() -> Self {
+        Self {
+            attr_request: BitMap4::from(&[1]),
         }
     }
 }
@@ -215,10 +208,11 @@ pub struct GetAttr4ResultOk {
     pub obj_attributes: FAttr4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, XDREnumDeserialize)]
 pub enum GetAttr4Result {
     NFS4_OK(GetAttr4ResultOk),
-    Default,
+    #[default_arm]
+    Default(u32),
 }
 
 pub const NFS4_VERIFIER_SIZE: usize = 8;
@@ -440,25 +434,6 @@ pub enum ReadDir4Result {
     DefautlArm,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FAttr4 {
-    pub attr_mask: BitMap4,
-    pub attr_vals: AttrList4,
-}
-
-impl FAttr4 {
-    pub fn empty_attr() -> Self {
-        Self {
-            attr_mask: Vec::new(),
-            attr_vals: AttrList4::new(),
-        }
-    }
-    pub fn fetch_attr(&self, val: u32) -> Result<ByteBuf, NFSCRSInnerError> {
-        
-        todo!()
-    }
-}
-
 #[derive(Debug, Serialize, Clone)]
 pub struct LookUp4Args {
     /* CURRENT_FH: directory */
@@ -532,10 +507,7 @@ impl Open4Args {
         };
 
         let open_how = if open_options.create {
-            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(FAttr4 {
-                attr_mask: Vec::new(),
-                attr_vals: ByteBuf::new(),
-            }))
+            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(fattr4_from_options(open_options)))
         } else {
             OpenFlag4::OPEN4_NOCREATE
         };
@@ -795,22 +767,35 @@ pub enum Write4Result {
     Default(u32),
 }
 
-#[derive(Debug, Serialize)]
+mod nfs_ftype4{
+    pub const NF4REG: u32 = 1;
+    pub const NF4DIR: u32 = 2;
+    pub const NF4BLK: u32 = 3;
+    pub const NF4CHR: u32 = 4;
+    pub const NF4LNK: u32 = 5;
+    pub const NF4SOCK: u32 = 6;
+    pub const NF4FIFO: u32 = 7;
+    pub const NF4ATTRDIR: u32 = 8;
+    pub const NF4NAMEDATTR: u32 = 9;
+}
+
+#[repr(u32)]
+#[derive(Debug, XDREnumSerialize)]
 pub enum CreateType4 {
-    NF4LNK(LinkText4),
-    NF4BLK(SpecData4),
-    NF4CHR(SpecData4),
-    NF4SOCK,
-    NF4FIFO,
-    NF4DIR,
-    Default,
+    NF4LNK(LinkText4) = nfs_ftype4::NF4LNK,
+    NF4BLK(SpecData4) = nfs_ftype4::NF4BLK,
+    NF4CHR(SpecData4) = nfs_ftype4::NF4CHR,
+    NF4SOCK = nfs_ftype4::NF4SOCK,
+    NF4FIFO = nfs_ftype4::NF4FIFO,
+    NF4DIR = nfs_ftype4::NF4DIR,
+    Default = nfs_ftype4::NF4ATTRDIR,
 }
 
 #[derive(Debug, Serialize)]
 pub struct Create4Args {
-    obj_type: CreateType4,
-    obj_name: Component4,
-    create_attrs: FAttr4,
+    pub obj_type: CreateType4,
+    pub obj_name: Component4,
+    pub create_attrs: FAttr4,
 }
 
 #[derive(Debug, XDREnumDeserialize)]

@@ -1,31 +1,32 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 use std::{
-    cell::Cell,
-    io::{self, Write},
-    net::{SocketAddr, TcpStream},
-    path::{Component, Path},
+    cell::Cell, io::{self, Write}, net::{SocketAddr, TcpStream}, os::unix::ffi::OsStrExt, path::{Component, Path, PathBuf}
 };
 
 use crate::{
     auth::AuthType,
+    fattr4::FAttr4,
     nfs4types::{BitMap4, ClientId4, Count4, Offset4},
     nfscrs_types::{AbsolutePath, DirEntry},
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     nfsv4ops::{
-        CallBackClient4, Compound4Result, FAttr4, GetAttr4Args, GetAttr4Result, GetFH4Result,
-        LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4, NFSStat4,
-        Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args, Read4Args,
-        Read4Result, ReadDir4Args, ReadDir4Result, SetClientId4Args, SetClientId4Result,
+        CallBackClient4, Compound4Result, Create4Args, CreateType4, GetAttr4Args, GetAttr4Result,
+        GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4,
+        NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args,
+        Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetClientId4Args, SetClientId4Result,
         SetClientIdConfirm4Args, Verifier4, Write4Args, Write4Result,
     },
     oncrpc_msg::{ONCRPCMessageReader, ONCRPCMessageReaderError},
     xdr_types::Opaque,
 };
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
+use serde_bytes::ByteBuf;
 use thiserror::Error;
 
 mod auth;
+mod fattr4;
+mod fattr4_utils;
 mod nfs4types;
 pub mod nfscrs_types;
 mod nfsv4_rpc_def;
@@ -323,8 +324,13 @@ impl NFSClientSession {
     pub fn read_dir(&mut self) {}
     pub fn lookup(&mut self, _path: &str) {}
     pub fn get_current_fh(&mut self) {}
-    pub fn get_attr(&mut self, attr_list: BitMap4) -> Result<FAttr4, NFSCRSError> {
+    pub fn get_attr(
+        &mut self,
+        path: &AbsolutePath,
+        attr_list: BitMap4,
+    ) -> Result<FAttr4, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
+        push_lookup_ops(&mut cops, path)?;
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args::new(attr_list)));
         let result = self.send_cops_and_get_result(&cops)?;
         if !result.is_status_ok() {
@@ -566,49 +572,206 @@ impl NFSClientSession {
             writeverf: write_result_ok.writeverf,
         })
     }
-    
-    pub fn mkdir(&mut self, path: AbsolutePath, _parents: bool, exists_ok: bool) -> Result<(), NFSCRSError> {
+
+    fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
-        let lookup_result = self.send_cops_and_get_result(&cops)?;
-        if lookup_result.is_status_ok(){
-            if exists_ok {
-                // we need check last getattr result is dir
-                let last_op = lookup_result.resarray.last().ok_or(NFSCRSInnerError::WrongOperationReply("Empty Reply".to_string()))?;
-                match last_op {
-                    NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(attr)) => {
-                        
-                    },
-                    _ => return Err(NFSCRSInnerError::WrongOperationReply("Unexpected reply".to_string()).into()),
+        let mut result = self.send_cops_and_get_result(&cops)?;
+        if !result.is_status_ok() {
+            return Err(NFSCRSError::NFSStatError(result.status));
+        }
+
+        if let Some(NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(getattr_result))) =
+            result.resarray.pop()
+        {
+            let fattr = getattr_result.obj_attributes;
+            fattr4_utils::is_dir(&fattr).map_err(|e| e.into())
+        } else {
+            Err(NFSCRSError::OperationError(format!(
+                "failed to getattr: {:?}",
+                path
+            )))
+        }
+    }
+
+    fn path_exist_part(
+        &mut self,
+        path: &AbsolutePath,
+    ) -> Result<AbsolutePath<'static>, NFSCRSError> {
+        let mut cops = NFS4CompoundProcedure::new();
+        push_lookup_ops(&mut cops, &path)?;
+        let result = self.send_cops_and_get_result(&cops)?;
+        let prev_len = cops.argarray.len();
+        let succ_len = if result.is_status_ok() {
+            prev_len
+        } else {
+            result.resarray.len() - 1
+        };
+        if succ_len == 0 {
+            return Err(NFSCRSError::OperationError(
+                "failed to put root fh".to_string(),
+            ));
+        }
+        let new_path = construct_path_with_n_components(path, succ_len)?;
+        Ok(new_path)
+    }
+
+    pub fn mkdir(
+        &mut self,
+        path: &AbsolutePath,
+        parents: bool,
+        exists_ok: bool,
+    ) -> Result<(), NFSCRSError> {
+        if path.is_root() {
+            if self.check_is_dir(&path)? {
+                if exists_ok {
+                    return Ok(());
                 }
+                return Err(
+                    NFSCRSInnerError::InvalidArgument("target dir exists".to_string()).into(),
+                );
             } else {
-               return Err(NFSCRSError::OperationError("Item exists".to_string()))
+                return Err(NFSCRSInnerError::InvalidArgument(
+                    "target path exists but is not a directory".to_string(),
+                )
+                .into());
             }
         }
-        todo!()
+
+        let exist_part = self.path_exist_part(&path)?;
+        if &exist_part == path {
+            if !exists_ok {
+                return Err(
+                    NFSCRSInnerError::InvalidArgument("target path exists".to_string()).into(),
+                );
+            } else {
+                if self.check_is_dir(&path)? {
+                    return Ok(());
+                } else {
+                    return Err(NFSCRSInnerError::InvalidArgument(
+                        "target path exists but is not a directory".to_string(),
+                    )
+                    .into());
+                }
+            }
+        }
+
+        if let Some(parent) = path.parent() {
+            if parent == exist_part.as_ref() {
+                return self.create_dir_inner(path, &exist_part);
+            }
+        } else {
+            return Err(NFSCRSInnerError::InvalidArgument(format!(
+                "wrong path: {}",
+                path.display()
+            ))
+            .into());
+            // TODO: even root are not exists, how to handle such case
+        }
+        if !parents {
+            return Err(NFSCRSInnerError::InvalidArgument(format!(
+                "path {} not exists",
+                path.parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            ))
+            .into());
+        }
+
+        self.create_dir_inner(path, &exist_part)
+    }
+    fn create_dir_inner(
+        &mut self,
+        target_dir: &AbsolutePath,
+        exist_part: &AbsolutePath,
+    ) -> Result<(), NFSCRSError> {
+        println!("exist_part: {}", exist_part.display());
+        // assume exists_part is a subpath or target dir
+        let stripped_path = target_dir.strip_prefix(exist_part).map_err(|e| {
+            NFSCRSInnerError::InvalidArgument(format!("failed to strip_prefix: {:?}", e))
+        })?;
+        let mut cops = NFS4CompoundProcedure::new();
+        push_lookup_ops(&mut cops, exist_part)?;
+        for c in stripped_path.components() {
+            match c {
+                Component::RootDir => {
+                    // do nothing
+                }
+                Component::CurDir => {
+                    // do nothing
+                }
+                Component::ParentDir => {
+                    //TODO: look up parent dir
+                }
+                Component::Normal(name) => {
+                    let create_arg = NFSArgOp4::OP_CREATE(Create4Args {
+                        obj_type: CreateType4::NF4DIR,
+                        obj_name: ByteBuf::from(name.as_bytes()),
+                        create_attrs: FAttr4::simple_dir_attr(),
+                    });
+                    cops.add_operation(create_arg);
+                }
+                Component::Prefix(p) => {
+                    return Err(NFSCRSInnerError::InvalidArgument(format!(
+                        "Prefix component not supported: {:?}",
+                        p
+                    ))
+                    .into());
+                }
+            }
+        }
+        let result = self.send_cops_and_get_result(&cops)?;
+        if result.is_status_ok(){
+            Ok(())
+        }else{
+            println!("failed to create directory");
+            Err(NFSCRSError::NFSStatError(result.status))
+        }
     }
 }
 
-fn push_lookup_and_getattr_ops(cops: &mut NFS4CompoundProcedure, path: &AbsolutePath, attr: GetAttr4Args) -> Result<(), NFSCRSInnerError> {
+fn push_lookup_and_getattr_ops(
+    cops: &mut NFS4CompoundProcedure,
+    path: &AbsolutePath,
+    attr: GetAttr4Args,
+) -> Result<(), NFSCRSInnerError> {
     cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
+    cops.add_operation(NFSArgOp4::OP_GETATTR(attr.clone()));
     for c in path.components() {
-        if matches!(c, Component::Normal(_)) {
-            let c_name = c
-                .as_os_str()
-                .to_str()
-                .ok_or(NFSCRSInnerError::InvalidArgument(
-                    "os_str is not utf8 str".to_owned(),
-                ))?
-                .to_owned();
-            cops.add_operation(NFSArgOp4::OP_LOOKUP(LookUp4Args::new(Opaque::from(
-                c_name.as_bytes(),
-            ))));
-            cops.add_operation(NFSArgOp4::OP_GETATTR(attr.clone()));
+        match c {
+            Component::RootDir => {
+                // do nothing here, since we already pushed the root file handle
+            }
+            Component::Normal(_) => {
+                let c_name = c
+                    .as_os_str()
+                    .to_str()
+                    .ok_or(NFSCRSInnerError::InvalidArgument(
+                        "os_str is not utf8 str".to_owned(),
+                    ))?
+                    .to_owned();
+                cops.add_operation(NFSArgOp4::OP_LOOKUP(LookUp4Args::new(Opaque::from(
+                    c_name.as_bytes(),
+                ))));
+            }
+            Component::CurDir => {
+                // do nothing here
+            }
+            Component::ParentDir => {
+                // TODO: Implement parent directory lookup
+                unimplemented!()
+            }
+            Component::Prefix(p) => {
+                return Err(NFSCRSInnerError::InvalidArgument(format!(
+                    "Prefix component not supported: {:?}",
+                    p
+                )));
+            }
         }
+        cops.add_operation(NFSArgOp4::OP_GETATTR(attr.clone()));
     }
     Ok(())
 }
-
 
 fn push_lookup_ops(
     cops: &mut NFS4CompoundProcedure,
@@ -645,4 +808,48 @@ pub fn split_path<'a, 'p>(
         AbsolutePath::try_from(parent).unwrap(),
         filename.to_str().unwrap(),
     ))
+}
+
+fn construct_path_with_n_components(
+    prev_path: &AbsolutePath,
+    n: usize,
+) -> Result<AbsolutePath<'static>, NFSCRSInnerError> {
+    let mut new_path = PathBuf::new();
+    for c in prev_path.components().take(n) {
+        new_path.push(c);
+    }
+    Ok(AbsolutePath::try_from(new_path)?)
+}
+
+mod misc {
+    use crate::{
+        NFSCRSInnerError,
+        fattr4_utils::is_dir,
+        nfsv4ops::{GetAttr4Result, NFSResultOp4},
+    };
+
+    pub(crate) fn check_op_getattr_and_is_dir(op: &NFSResultOp4) -> Result<bool, NFSCRSInnerError> {
+        match op {
+            NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(attr)) => {
+                Ok(is_dir(&attr.obj_attributes)?)
+            }
+            _ => {
+                return Err(NFSCRSInnerError::InvalidArgument(format!(
+                    "operation is not OP_GETATTR: {op:?}"
+                )));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_construct_path_with_n_components() {
+        let path = AbsolutePath::try_from("/a/b/c").unwrap();
+        let new_path = construct_path_with_n_components(&path, 3).unwrap();
+        assert_eq!(new_path, AbsolutePath::try_from("/a/b").unwrap());
+    }
 }
