@@ -102,7 +102,7 @@ pub const NFS4_VERIFIER_SIZE: usize = 8;
 pub const NFS4_OTHER_SIZE: usize = 12;
 pub const NFS4_OPAQUE_LIMIT: usize = 1024;
 
-pub const NFS4_INT64_MAX: usize = 0x7fffffffffffffff;
-pub const NFS4_UINT64_MAX: usize = 0xffffffffffffffff;
-pub const NFS4_INT32_MAX: usize = 0x7fffffff;
-pub const NFS4_UINT32_MAX: usize = 0xffffffff;
+pub const NFS4_INT64_MAX: i64 = i64::MAX;
+pub const NFS4_UINT64_MAX: u64 = u64::MAX;
+pub const NFS4_INT32_MAX: i32 = i32::MAX;
+pub const NFS4_UINT32_MAX: u32 = u32::MAX;
