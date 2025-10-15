@@ -11,6 +11,6 @@ fn main() {
             vec![2 | 4], // type and expire time
         )
         .unwrap();
-    let r = attr.fetch_attr(1).unwrap();
+    let r = attr.fetch_attr_raw(1).unwrap();
     println!("{:?}", r);
 }

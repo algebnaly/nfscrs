@@ -1,6 +1,6 @@
 use xdr_brk::from_bytes;
 
-use crate::{fattr4::FAttr4, nfs4types::{AttrList4, NFSFType4}, NFSCRSInnerError, OpenOptions};
+use crate::{fattr4::FAttr4, nfs4_types::{AttrList4, NFSFType4}, NFSCRSInnerError, OpenOptions};
 
 pub(crate) fn attr_mask_to_list(attr_mask: &[u32]) -> Vec<usize> {
     let mut result = Vec::new();
@@ -15,7 +15,7 @@ pub(crate) fn attr_mask_to_list(attr_mask: &[u32]) -> Vec<usize> {
 }
 
 pub(crate) fn is_dir(fattr4: &FAttr4) -> Result<bool, NFSCRSInnerError> {
-    let attr_bytes = fattr4.fetch_attr(1)?;
+    let attr_bytes = fattr4.fetch_attr_raw(1)?;
     let file_type: NFSFType4 = from_bytes(&attr_bytes)?;
     Ok(matches!(file_type, NFSFType4::NF4DIR))
 }

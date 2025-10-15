@@ -1,14 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
+use xdr_brk::from_bytes;
 
 use crate::{
-    fattr4_utils::{attr_mask_to_list, fattr4_from_mode}, nfs4types::{
-        AsciiRequired4, AttrList4, BitMap4, ChangeId4, FSId4, FSLocations4, Mode4, NFSAce4, NFSFType4, NFSLease4, NFSTime4, SetTime4, SpecData4, Utf8StrMixed, NFSFH4
-    }, nfsv4ops::NFSStat4, NFSCRSInnerError
+    NFSCRSInnerError,
+    fattr4_utils::{attr_mask_to_list, fattr4_from_mode},
+    nfs4_types::{
+        AsciiRequired4, AttrList4, BitMap4, ChangeId4, FSId4, FSLocations4, Mode4, NFSAce4, NFSFH4,
+        NFSFType4, NFSLease4, NFSTime4, SetTime4, SpecData4, Utf8StrMixed,
+    },
+    nfsv4_ops::NFSStat4,
 };
 
 use xdr_brk::deserialize_len;
-
 
 // here, we use `X-Macro` pattern to reduce repetition
 macro_rules! for_each_fattr4 {
@@ -83,6 +87,19 @@ macro_rules! define_fattr4_enum {
                 $variant($type) = $discriminant,
             )*
         }
+        impl FAttr4Type {
+            pub fn from_bitnum(data: &[u8], index: usize) -> Result<Self, NFSCRSInnerError> {
+                match index {
+                    $(
+                        $discriminant => {
+                            let value: $type = from_bytes(data)?;
+                            Ok(FAttr4Type::$variant(value))
+                        }
+                    )*
+                    _ => Err(NFSCRSInnerError::InvalidArgument(format!("Invalid index: {}", index))),
+                }
+            }
+        }
     };
 }
 
@@ -104,6 +121,17 @@ macro_rules! define_fattr4_iterator {
 for_each_fattr4!(define_fattr4_enum);
 for_each_fattr4!(define_fattr4_iterator);
 
+pub mod fattr4_names {
+    macro_rules! define_fattr4_consts {
+            ($( ( $variant:ident, $type:ty, $discriminant:expr ) ),* $(,)?) => {
+                $(
+                    pub const $variant: usize = $discriminant;
+                )*
+            };
+        }
+
+    for_each_fattr4!(define_fattr4_consts);
+}
 
 // generate match case code here
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -119,7 +147,7 @@ impl FAttr4 {
             attr_vals: AttrList4::new(),
         }
     }
-    
+
     pub fn simple_dir_attr() -> Self {
         let mode: u32 = 0o750;
         fattr4_from_mode(mode)
@@ -129,7 +157,7 @@ impl FAttr4 {
         fattr4_from_mode(mode)
     }
     
-    pub fn fetch_attr(&self, bit_num: u32) -> Result<ByteBuf, NFSCRSInnerError> {
+    pub fn fetch_attr_raw(&self, bit_num: usize) -> Result<ByteBuf, NFSCRSInnerError> {
         let attr_list = attr_mask_to_list(&self.attr_mask);
 
         let target_index = bit_num as usize;
@@ -153,6 +181,7 @@ impl FAttr4 {
             }
 
             if attr_index == target_index {
+                
                 return Ok(remaining_bytes[..attr_len].to_vec().into());
             }
             remaining_bytes = &remaining_bytes[attr_len..];
@@ -163,4 +192,16 @@ impl FAttr4 {
             bit_num
         )))
     }
+    pub fn fetch_attr(&self, bit_num: usize) -> Result<FAttr4Type, NFSCRSInnerError> {
+        let data = self.fetch_attr_raw(bit_num)?;
+        FAttr4Type::from_bitnum(&data, bit_num)
+    }
+}
+
+pub fn set_bitmap(bitmap: &mut BitMap4, bit_pos: usize) {
+    let required_len = (bit_pos / 32) + 1;
+    while bitmap.len() < required_len {
+        bitmap.push(0);
+    }
+    bitmap[bit_pos / 32] |= 1 << (bit_pos % 32);
 }

@@ -1,22 +1,26 @@
 #![allow(non_camel_case_types)]
 #![allow(dead_code)]
 use std::{
-    cell::Cell, io::{self, Write}, net::{SocketAddr, TcpStream}, os::unix::ffi::OsStrExt, path::{Component, Path, PathBuf}
+    cell::Cell,
+    io::{self, Write},
+    net::{SocketAddr, TcpStream},
+    os::unix::ffi::OsStrExt,
+    path::{Component, Path, PathBuf},
 };
 
 use crate::{
     auth::AuthType,
     fattr4::FAttr4,
-    nfs4types::{BitMap4, ClientId4, Count4, Offset4},
+    nfs4_types::{BitMap4, ClientId4, Count4, Offset4},
     nfscrs_types::{AbsolutePath, DirEntry},
-    nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
-    nfsv4ops::{
+    nfsv4_ops::{
         CallBackClient4, Compound4Result, Create4Args, CreateType4, GetAttr4Args, GetAttr4Result,
         GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4,
         NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args,
         Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetClientId4Args, SetClientId4Result,
         SetClientIdConfirm4Args, Verifier4, Write4Args, Write4Result,
     },
+    nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::{ONCRPCMessageReader, ONCRPCMessageReaderError},
     xdr_types::Opaque,
 };
@@ -25,12 +29,13 @@ use serde_bytes::ByteBuf;
 use thiserror::Error;
 
 mod auth;
-mod fattr4;
+pub mod fattr4;
 mod fattr4_utils;
-mod nfs4types;
+pub mod nfs4_types;
+pub mod nfs4_utils;
 pub mod nfscrs_types;
+mod nfsv4_ops;
 mod nfsv4_rpc_def;
-mod nfsv4ops;
 mod oncrpc_msg;
 mod state;
 mod xdr_types;
@@ -342,23 +347,6 @@ impl NFSClientSession {
         };
         Ok(res.obj_attributes.clone())
     }
-    pub fn test_get_attr(&mut self) -> Result<FAttr4, NFSCRSError> {
-        let mut cops = NFS4CompoundProcedure::new();
-        cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
-        cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args::new(vec![1])));
-        let result = self.send_cops_and_get_result(&cops)?;
-        if !result.is_status_ok() {
-            //TODO: need futher check whats going wrong
-            return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
-        }
-        let mut resarray = result.resarray;
-        let NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(res)) =
-            resarray.pop().ok_or(NFSCRSError::EmptyReplyBody)?
-        else {
-            return Err(NFSCRSError::OperationError("wrong reply type".to_owned()));
-        };
-        Ok(res.obj_attributes)
-    }
     pub fn put_root_fh(&mut self) -> Result<(), NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
@@ -389,6 +377,22 @@ impl NFSClientSession {
         self.send_msg(msg)?;
         self.read_cops_result()
     }
+
+    pub fn list_dir_path(
+        &mut self,
+        path: &AbsolutePath,
+    ) -> Result<Vec<AbsolutePath<'static>>, NFSCRSError> {
+        self.list_dir(path).map(|v| {
+            v.into_iter()
+                .map(|de| {
+                    path.join(PathBuf::from(String::from_utf8_lossy(&de.name).to_string()))
+                        .try_into()
+                })
+                .filter_map(|e| e.ok())
+                .collect()
+        })
+    }
+
     pub fn list_dir(&mut self, path: &AbsolutePath) -> Result<Vec<DirEntry>, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, path)?;
@@ -549,7 +553,7 @@ impl NFSClientSession {
         cops.add_operation(NFSArgOp4::OP_WRITE(Write4Args {
             state_id: opened_file.state_id.clone(),
             offset: opened_file.offset as u64,
-            stable: nfsv4ops::StableHow4::UNSTABLE4,
+            stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
         }));
         let result = self.send_cops_and_get_result(&cops)?;
@@ -721,9 +725,9 @@ impl NFSClientSession {
             }
         }
         let result = self.send_cops_and_get_result(&cops)?;
-        if result.is_status_ok(){
+        if result.is_status_ok() {
             Ok(())
-        }else{
+        } else {
             println!("failed to create directory");
             Err(NFSCRSError::NFSStatError(result.status))
         }
@@ -825,7 +829,7 @@ mod misc {
     use crate::{
         NFSCRSInnerError,
         fattr4_utils::is_dir,
-        nfsv4ops::{GetAttr4Result, NFSResultOp4},
+        nfsv4_ops::{GetAttr4Result, NFSResultOp4},
     };
 
     pub(crate) fn check_op_getattr_and_is_dir(op: &NFSResultOp4) -> Result<bool, NFSCRSInnerError> {

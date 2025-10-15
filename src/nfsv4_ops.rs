@@ -3,7 +3,7 @@ use serde_bytes::ByteBuf;
 use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::{
-    fattr4::FAttr4, fattr4_utils::fattr4_from_options, nfs4types::{
+    fattr4::FAttr4, fattr4_utils::fattr4_from_options, nfs4_types::{
         AceFlag4, AceMask4, AceType4, BitMap4, ChangeId4, ClientId4, Component4, Count4, LinkText4, NFSCookie4, Offset4, SeqId4, SpecData4, Utf8StrMixed, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSFH4
     }, nfscrs_types::DirEntry, xdr_types::Opaque, NFSCRSInnerError, NFSClientSession, OpenOptions
 };

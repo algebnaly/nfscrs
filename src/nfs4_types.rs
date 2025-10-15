@@ -42,8 +42,8 @@ pub struct FSId4 {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NFSTime4 {
-    seconds: i64,
-    nseconds: u32,
+    pub seconds: i64,
+    pub nseconds: u32,
 }
 
 pub mod time_how4 {

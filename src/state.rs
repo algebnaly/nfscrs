@@ -1,8 +1,8 @@
 use crate::{
     NFSCRSInnerError,
-    nfs4types::{Count4, NFSFH4},
+    nfs4_types::{Count4, NFSFH4},
     nfscrs_types::AbsolutePath,
-    nfsv4ops::{
+    nfsv4_ops::{
         GetFH4ResultOk, Open4ResultOk, OpenDelegation4, OpenFlag4, Read4ResultOk, StableHow4,
         StateId4, Verifier4,
     },

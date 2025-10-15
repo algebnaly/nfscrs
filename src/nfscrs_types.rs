@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 
 use crate::NFSCRSInnerError;
-use crate::nfs4types::Component4;
+use crate::nfs4_types::Component4;
 use crate::fattr4::FAttr4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +29,7 @@ impl<'a> TryFrom<&'a Path> for AbsolutePath<'a> {
 
     fn try_from(value: &'a Path) -> Result<Self, Self::Error> {
         if value.is_absolute() {
-            if misc::contains_dot_or_dotdot(value) {
+            if misc::contains_current_or_parent(value) {
                 Err(NFSCRSInnerError::InvalidArgument(
                     "path contains . or ..".to_owned(),
                 ))
@@ -44,12 +44,12 @@ impl<'a> TryFrom<&'a Path> for AbsolutePath<'a> {
     }
 }
 
-impl<'a> TryFrom<PathBuf> for AbsolutePath<'a> {
+impl TryFrom<PathBuf> for AbsolutePath<'static> {
     type Error = NFSCRSInnerError;
 
     fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
         if value.is_absolute() {
-            if misc::contains_dot_or_dotdot(&value) {
+            if misc::contains_current_or_parent(&value) {
                 Err(NFSCRSInnerError::InvalidArgument(
                     "path contains . or ..".to_owned(),
                 ))
@@ -122,7 +122,7 @@ mod misc{
     use std::path::Component;
     use std::path::Path;
 
-    pub(crate) fn contains_dot_or_dotdot(path: &Path) -> bool {
+    pub(crate) fn contains_current_or_parent(path: &Path) -> bool {
         path.components().any(|c| matches!(c, Component::CurDir | Component::ParentDir))
     }
 }
