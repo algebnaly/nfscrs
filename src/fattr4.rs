@@ -4,7 +4,7 @@ use xdr_brk::from_bytes;
 
 use crate::{
     NFSCRSInnerError,
-    fattr4_utils::{attr_mask_to_list, fattr4_from_mode},
+    fattr4_utils::{attr_mask_to_list, fattr4_from_file_mode},
     nfs4_types::{
         AsciiRequired4, AttrList4, BitMap4, ChangeId4, FSId4, FSLocations4, Mode4, NFSAce4, NFSFH4,
         NFSFType4, NFSLease4, NFSTime4, SetTime4, SpecData4, Utf8StrMixed,
@@ -150,11 +150,35 @@ impl FAttr4 {
 
     pub fn simple_dir_attr() -> Self {
         let mode: u32 = 0o750;
-        fattr4_from_mode(mode)
+        fattr4_from_file_mode(mode)
     }
     pub fn simple_file_attr() -> Self {
         let mode: u32 = 0o640;
-        fattr4_from_mode(mode)
+        fattr4_from_file_mode(mode)
+    }
+    
+    // assume bit_nums are sorted acsending
+    pub fn fetch_attr_vals_raw(&self, bit_nums: &[usize]) -> Result<Vec<Vec<u8>>, NFSCRSInnerError>{
+        
+        let mut attr_val_list: Vec<Vec<u8>> = Vec::new();
+        let mut remaining_bytes = self.attr_vals.as_slice();
+
+        for attr_index in bit_nums {
+            let attr_len = fetch_fattr4_item_size(attr_index.clone(), remaining_bytes)?;
+
+            if attr_len > remaining_bytes.len() {
+                return Err(NFSCRSInnerError::InvalidArgument(format!(
+                    "Invalid attribute length {} for bit_num {}",
+                    attr_len, attr_index
+                )));
+            }
+            attr_val_list.push(remaining_bytes[..attr_len].to_vec());
+            remaining_bytes = &remaining_bytes[attr_len..];
+        }
+        if remaining_bytes.len() != 0{
+            return Err(NFSCRSInnerError::InvalidArgument("invalid attribute bytes".to_string()))
+        }
+        Ok(attr_val_list)
     }
     
     pub fn fetch_attr_raw(&self, bit_num: usize) -> Result<ByteBuf, NFSCRSInnerError> {

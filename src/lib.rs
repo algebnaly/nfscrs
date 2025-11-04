@@ -10,15 +10,16 @@ use std::{
 
 use crate::{
     auth::AuthType,
+    constants::{READDIR_DEFAULT_ATTR, READDIR_MAX_COUNT},
     fattr4::FAttr4,
-    nfs4_types::{BitMap4, ClientId4, Count4, Offset4},
+    nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_types::{AbsolutePath, DirEntry},
     nfsv4_ops::{
         CallBackClient4, Compound4Result, Create4Args, CreateType4, GetAttr4Args, GetAttr4Result,
         GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4,
         NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args,
-        Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetClientId4Args, SetClientId4Result,
-        SetClientIdConfirm4Args, Verifier4, Write4Args, Write4Result,
+        Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetAttr4Args, SetClientId4Args,
+        SetClientId4Result, SetClientIdConfirm4Args, StateId4, Verifier4, Write4Args, Write4Result,
     },
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::{ONCRPCMessageReader, ONCRPCMessageReaderError},
@@ -29,14 +30,16 @@ use serde_bytes::ByteBuf;
 use thiserror::Error;
 
 mod auth;
+mod constants;
 pub mod fattr4;
-mod fattr4_utils;
+pub mod fattr4_utils;
 pub mod nfs4_types;
 pub mod nfs4_utils;
 pub mod nfscrs_types;
 mod nfsv4_ops;
 mod nfsv4_rpc_def;
 mod oncrpc_msg;
+mod simple_api;
 mod state;
 mod xdr_types;
 
@@ -395,22 +398,53 @@ impl NFSClientSession {
 
     pub fn list_dir(&mut self, path: &AbsolutePath) -> Result<Vec<DirEntry>, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
-        push_lookup_ops(&mut cops, path)?;
 
-        let readdir_args = ReadDir4Args::start_read(1 << 20, 1024, vec![1]);
-        cops.add_operation(NFSArgOp4::OP_READDIR(readdir_args));
-        let mut result = self.send_cops_and_get_result(&cops)?;
-        if !result.is_status_ok() {
-            return Err(NFSCRSError::OperationError("readdir failed!".to_owned()));
+        let mut readdir_args = ReadDir4Args::start_read(
+            READDIR_MAX_COUNT,
+            READDIR_MAX_COUNT,
+            READDIR_DEFAULT_ATTR.to_vec(),
+        );
+        let mut dir_entry_list: Vec<DirEntry> = Vec::new();
+        loop {
+            cops.argarray.clear();
+            push_lookup_ops(&mut cops, path)?;
+            cops.add_operation(NFSArgOp4::OP_READDIR(readdir_args));
+
+            let mut result = self.send_cops_and_get_result(&cops)?;
+            if !result.is_status_ok() {
+                return Err(NFSCRSError::OperationError("readdir failed!".to_owned()));
+            }
+            let Some(NFSResultOp4::OP_READDIR(ReadDir4Result::NFS4_OK(res))) =
+                result.resarray.pop()
+            else {
+                return Err(NFSCRSError::OperationError(
+                    "results wrong operation type".to_owned(),
+                ));
+            };
+            let next_cookie_verf = res.cookie_verf.clone();
+            let entries_with_cookie = res.build_entries();
+
+            dir_entry_list.extend_from_slice(&entries_with_cookie.0);
+
+            if res.readdir_complete() {
+                break;
+            }
+
+            if let Some(cookie) = entries_with_cookie.1 {
+                readdir_args = ReadDir4Args {
+                    cookie,
+                    cookie_verf: next_cookie_verf,
+                    dircount: READDIR_MAX_COUNT,
+                    maxcount: READDIR_MAX_COUNT,
+                    attr_request: READDIR_DEFAULT_ATTR.to_vec(),
+                };
+            } else {
+                break;
+            }
         }
-        let Some(NFSResultOp4::OP_READDIR(ReadDir4Result::NFS4_OK(res))) = result.resarray.pop()
-        else {
-            return Err(NFSCRSError::OperationError(
-                "results wrong operation type".to_owned(),
-            ));
-        };
-        Ok(res.build_entries())
+        Ok(dir_entry_list)
     }
+
     pub fn open(
         &mut self,
         path: &AbsolutePath,
@@ -565,7 +599,7 @@ impl NFSClientSession {
 
         let NFSResultOp4::OP_WRITE(Write4Result::NFS4_OK(write_result_ok)) = write_result else {
             return Err(
-                NFSCRSInnerError::WrongMessageType("expecting Read4Result".to_owned()).into(),
+                NFSCRSInnerError::WrongMessageType("expecting Write4Result".to_owned()).into(),
             );
         };
 
@@ -575,6 +609,48 @@ impl NFSClientSession {
             committed: write_result_ok.committed,
             writeverf: write_result_ok.writeverf,
         })
+    }
+
+    pub fn set_file_attr(
+        &mut self,
+        path: &AbsolutePath,
+        fattr4: FAttr4,
+    ) -> Result<BitMap4, NFSCRSError> {
+        let opening_file = self.open(path, OpenOptions::new().write(true))?;
+        let opened_file = self.open_confirm(opening_file)?;
+        let bitmap = self.set_attr(&opened_file.file_handle, &fattr4, &opened_file.state_id)?;
+        //TODO: need a close operation here
+        Ok(bitmap)
+    }
+
+    pub fn set_attr(
+        &mut self,
+        fh: &NFSFH4,
+        fattr4: &FAttr4,
+        state_id: &StateId4,
+    ) -> Result<BitMap4, NFSCRSError> {
+        let mut cops = NFS4CompoundProcedure::new();
+        cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args { object: fh.clone() }));
+        let set_attr_op = SetAttr4Args {
+            state_id: state_id.clone(),
+            obj_attributes: fattr4.clone(),
+        };
+        cops.add_operation(NFSArgOp4::OP_SETATTR(set_attr_op));
+        let mut result = self.send_cops_and_get_result(&cops)?;
+        if !result.is_status_ok() {
+            return Err(NFSCRSError::NFSStatError(result.status));
+        }
+
+        let bitmap = if let Some(NFSResultOp4::OP_SETATTR(set_attr_result)) = result.resarray.pop()
+        {
+            if !matches!(set_attr_result.status, NFSStat4::NFS4_OK) {
+                return Err(NFSCRSError::NFSStatError(set_attr_result.status));
+            }
+            set_attr_result.attrs_set
+        } else {
+            return Err(NFSCRSError::EmptyReplyBody);
+        };
+        Ok(bitmap)
     }
 
     fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {

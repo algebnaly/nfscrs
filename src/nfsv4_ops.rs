@@ -3,9 +3,16 @@ use serde_bytes::ByteBuf;
 use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::{
-    fattr4::FAttr4, fattr4_utils::fattr4_from_options, nfs4_types::{
-        AceFlag4, AceMask4, AceType4, BitMap4, ChangeId4, ClientId4, Component4, Count4, LinkText4, NFSCookie4, Offset4, SeqId4, SpecData4, Utf8StrMixed, NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSFH4
-    }, nfscrs_types::DirEntry, xdr_types::Opaque, NFSCRSInnerError, NFSClientSession, OpenOptions
+    NFSCRSInnerError, NFSClientSession, OpenOptions,
+    fattr4::FAttr4,
+    fattr4_utils::FAttr4Builder,
+    nfs4_types::{
+        AceFlag4, AceMask4, AceType4, BitMap4, ChangeId4, ClientId4, Component4, Count4, LinkText4,
+        NFS4_OPAQUE_LIMIT, NFS4_OTHER_SIZE, NFSCookie4, NFSFH4, Offset4, SeqId4, SpecData4,
+        Utf8StrMixed,
+    },
+    nfscrs_types::DirEntry,
+    xdr_types::Opaque,
 };
 
 pub const TAG: &str = "nfscrstag";
@@ -47,7 +54,7 @@ pub enum NFSArgOp4 {
     OP_RESTOREFH,                                    //void;
     OP_SAVEFH,                                       //void;
     OP_SECINFO,                                      //SECINFO4args opsecinfo;
-    OP_SETATTR,                                      //SETATTR4args opsetattr;
+    OP_SETATTR(SetAttr4Args),                                      //SETATTR4args opsetattr;
     OP_SETCLIENTID(SetClientId4Args),                //SETCLIENTID4args opsetclientid;
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
     OP_VERIFY,                                       //VERIFY4args opverify;
@@ -92,7 +99,7 @@ pub enum NFSResultOp4 {
     OP_RESTOREFH,
     OP_SAVEFH,
     OP_SECINFO,
-    OP_SETATTR,
+    OP_SETATTR(SetAttr4Result),
     OP_SETCLIENTID(SetClientId4Result),
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Result),
     OP_VERIFY,
@@ -416,22 +423,25 @@ impl ReadDir4ResultOk {
     pub fn readdir_complete(&self) -> bool {
         self.reply.eof
     }
-    pub fn build_entries(&self) -> Vec<DirEntry> {
+    pub fn build_entries(&self) -> (Vec<DirEntry>, Option<u64>) {
         let mut entries = Vec::new();
         let mut next_e = &self.reply.entries;
-
+        let mut cookie = None;
         while let Some(e) = next_e {
             entries.push(DirEntry::new(e.name.clone(), e.attrs.clone()));
             next_e = &e.next_entry;
+            cookie = Some(e.cookie);
         }
-        entries
+        (entries, cookie)
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[repr(u32)]
+#[derive(Debug, XDREnumDeserialize, Clone)]
 pub enum ReadDir4Result {
     NFS4_OK(ReadDir4ResultOk),
-    DefautlArm,
+    #[default_arm]
+    DefautlArm(u32),
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -506,8 +516,10 @@ impl Open4Args {
             open_params::OPEN4_SHARE_ACCESS_BOTH
         };
 
+        let mut fattr4_builder = FAttr4Builder::new();
+        fattr4_builder.set_open_options(&open_options);
         let open_how = if open_options.create {
-            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(fattr4_from_options(open_options)))
+            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(fattr4_builder.build()))
         } else {
             OpenFlag4::OPEN4_NOCREATE
         };
@@ -767,7 +779,7 @@ pub enum Write4Result {
     Default(u32),
 }
 
-mod nfs_ftype4{
+mod nfs_ftype4 {
     pub const NF4REG: u32 = 1;
     pub const NF4DIR: u32 = 2;
     pub const NF4BLK: u32 = 3;
@@ -809,4 +821,17 @@ pub enum Create4Result {
 pub struct Create4ResultOk {
     pub cinfo: ChangeInfo4,
     pub attr_set: BitMap4, /* attributes set */
+}
+
+#[derive(Debug, Serialize)]
+pub struct SetAttr4Args {
+    /* CURRENT_FH: target object */
+    pub state_id: StateId4,
+    pub obj_attributes: FAttr4,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetAttr4Result {
+    pub status: NFSStat4,
+    pub attrs_set: BitMap4,
 }
