@@ -24,7 +24,7 @@ pub enum NFSArgOp4 {
     _PlaceHolder1,
     _PlaceHolder2,
     OP_ACCESS,                                       //ACCESS4args opaccess;
-    OP_CLOSE,                                        //CLOSE4args opclose;
+    OP_CLOSE(Close4Args),                                        //CLOSE4args opclose;
     OP_COMMIT,                                       //COMMIT4args opcommit;
     OP_CREATE(Create4Args),                          //CREATE4args opcreate;
     OP_DELEGPURGE,                                   //DELEGPURGE4args opdelegpurge;
@@ -69,7 +69,7 @@ pub enum NFSResultOp4 {
     _PlaceHolder1,
     _PlaceHolder2,
     OP_ACCESS,
-    OP_CLOSE,
+    OP_CLOSE(Close4Result),
     OP_COMMIT,
     OP_CREATE(Create4Result),
     OP_DELEGPURGE,
@@ -834,4 +834,18 @@ pub struct SetAttr4Args {
 pub struct SetAttr4Result {
     pub status: NFSStat4,
     pub attrs_set: BitMap4,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Close4Args {
+    /* CURRENT_FH: object */
+    pub seq_id: SeqId4,
+    pub open_state_id: StateId4,
+}
+
+#[derive(Debug, XDREnumDeserialize)]
+pub enum Close4Result {
+    NFS4_OK(StateId4),
+    #[default_arm]
+    Default(u32),
 }

@@ -15,11 +15,7 @@ use crate::{
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_types::{AbsolutePath, DirEntry},
     nfsv4_ops::{
-        CallBackClient4, Compound4Result, Create4Args, CreateType4, GetAttr4Args, GetAttr4Result,
-        GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4,
-        NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args,
-        Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetAttr4Args, SetClientId4Args,
-        SetClientId4Result, SetClientIdConfirm4Args, StateId4, Verifier4, Write4Args, Write4Result,
+        CallBackClient4, Close4Args, Close4Result, Compound4Result, Create4Args, CreateType4, GetAttr4Args, GetAttr4Result, GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4, NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args, Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, SetAttr4Args, SetClientId4Args, SetClientId4Result, SetClientIdConfirm4Args, StateId4, Verifier4, Write4Args, Write4Result
     },
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::{ONCRPCMessageReader, ONCRPCMessageReaderError},
@@ -504,10 +500,11 @@ impl NFSClientSession {
         cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
             object: opening_file.file_handle.clone(),
         }));
+        let seq_id = opening_file.open_owner_seq_id + 1;
 
         let mut open_confirm_args = OpenConfirm4Args {
             open_stateid: opening_file.state_id.clone(),
-            seq_id: opening_file.open_owner_seq_id + 1,
+            seq_id,
         };
 
         open_confirm_args.open_stateid.seq_id = open_confirm_args.seq_id;
@@ -537,11 +534,37 @@ impl NFSClientSession {
             share_access: opening_file.share_access,
             share_deny: opening_file.share_deny,
             offset: 0,
+            open_owner_seq_id: seq_id,
             path: opening_file.path,
         };
         Ok(opened_file)
     }
-    pub fn close(&mut self) {}
+    
+    pub fn close(&mut self, opened_file: &mut OpenedFile) -> Result<StateId4, NFSCRSError>{
+        opened_file.open_owner_seq_id += 1;
+        let seq_id = opened_file.open_owner_seq_id;
+        
+        let mut cops = NFS4CompoundProcedure::new();
+        cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
+            object: opened_file.file_handle.clone(),
+        }));
+        cops.add_operation(NFSArgOp4::OP_CLOSE(Close4Args{
+            seq_id,
+            open_state_id: opened_file.state_id.clone()
+        }));
+        let result = self.send_cops_and_get_result(&cops)?;
+        if !result.is_status_ok() {
+            return Err(NFSCRSError::NFSStatError(result.status));
+        }
+        let mut res_array = result.resarray;
+        let close_result = res_array.pop().unwrap();
+        let NFSResultOp4::OP_CLOSE(Close4Result::NFS4_OK(close_result_seq_id)) = close_result else {
+            return Err(
+                NFSCRSInnerError::WrongMessageType("expecting Close4Result".to_owned()).into(),
+            );
+        };
+        Ok(close_result_seq_id)
+    }
 
     pub fn read(
         &mut self,

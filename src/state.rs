@@ -1,6 +1,6 @@
 use crate::{
     NFSCRSInnerError,
-    nfs4_types::{Count4, NFSFH4},
+    nfs4_types::{Count4, NFSFH4, SeqId4},
     nfscrs_types::AbsolutePath,
     nfsv4_ops::{
         GetFH4ResultOk, Open4ResultOk, OpenDelegation4, OpenFlag4, Read4ResultOk, StableHow4,
@@ -52,6 +52,7 @@ pub struct OpenedFile {
     pub share_access: u32,
     pub share_deny: u32,
     pub offset: usize,
+    pub open_owner_seq_id: SeqId4,
     pub path: AbsolutePath<'static>,
 }
 
