@@ -24,7 +24,7 @@ pub enum NFSArgOp4 {
     _PlaceHolder1,
     _PlaceHolder2,
     OP_ACCESS,                                       //ACCESS4args opaccess;
-    OP_CLOSE(Close4Args),                                        //CLOSE4args opclose;
+    OP_CLOSE(Close4Args),                            //CLOSE4args opclose;
     OP_COMMIT,                                       //COMMIT4args opcommit;
     OP_CREATE(Create4Args),                          //CREATE4args opcreate;
     OP_DELEGPURGE,                                   //DELEGPURGE4args opdelegpurge;
@@ -54,7 +54,7 @@ pub enum NFSArgOp4 {
     OP_RESTOREFH,                                    //void;
     OP_SAVEFH,                                       //void;
     OP_SECINFO,                                      //SECINFO4args opsecinfo;
-    OP_SETATTR(SetAttr4Args),                                      //SETATTR4args opsetattr;
+    OP_SETATTR(SetAttr4Args),                        //SETATTR4args opsetattr;
     OP_SETCLIENTID(SetClientId4Args),                //SETCLIENTID4args opsetclientid;
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
     OP_VERIFY,                                       //VERIFY4args opverify;
@@ -483,13 +483,13 @@ pub mod open_params {
 }
 
 impl Open4Args {
-    pub fn simple_open(session: &NFSClientSession, filename: &str) -> Self {
+    pub fn simple_open(session: &mut NFSClientSession, filename: &str, seq_id: u32) -> Self {
         let owner = OpenOwner {
             client_id: session.client_id,
-            owner: ByteBuf::from(b"simple_open"),
+            owner: session.open_owner.owner.clone(),
         };
         Self {
-            seq_id: 0,
+            seq_id,
             share_access: open_params::OPEN4_SHARE_ACCESS_READ,
             share_deny: 0,
             owner,
@@ -501,11 +501,12 @@ impl Open4Args {
     pub fn with_open_options(
         session: &NFSClientSession,
         filename: &str,
+        seq_id: u32,
         open_options: OpenOptions,
     ) -> Self {
         let owner = OpenOwner {
             client_id: session.client_id,
-            owner: ByteBuf::from(b"open"),
+            owner: session.open_owner.owner.clone(),
         };
 
         let share_access = if open_options.read && !open_options.write {
@@ -525,7 +526,7 @@ impl Open4Args {
         };
 
         Self {
-            seq_id: 0,
+            seq_id,
             share_access,
             share_deny: 0,
             owner,

@@ -62,27 +62,27 @@ pub enum SetTime4 {
 #[derive(Debug, XDREnumSerialize, XDREnumDeserialize)]
 #[repr(u32)]
 pub enum NFSFType4 {
-        NF4REG = 1,     /* Regular File */
-        NF4DIR = 2,     /* Directory */
-        NF4BLK = 3,     /* Special File - block device */
-        NF4CHR = 4,     /* Special File - character device */
-        NF4LNK = 5,     /* Symbolic Link */
-        NF4SOCK = 6,    /* Special File - socket */
-        NF4FIFO = 7,    /* Special File - fifo */
-        NF4ATTRDIR = 8,    /* Attribute Directory */
-        NF4NAMEDATTR = 9     /* Named Attribute */
+    NF4REG = 1,       /* Regular File */
+    NF4DIR = 2,       /* Directory */
+    NF4BLK = 3,       /* Special File - block device */
+    NF4CHR = 4,       /* Special File - character device */
+    NF4LNK = 5,       /* Symbolic Link */
+    NF4SOCK = 6,      /* Special File - socket */
+    NF4FIFO = 7,      /* Special File - fifo */
+    NF4ATTRDIR = 8,   /* Attribute Directory */
+    NF4NAMEDATTR = 9, /* Named Attribute */
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FSLocation4 {
-        pub server: Utf8StrCis,
-        pub rootpath: PathName4,
+    pub server: Utf8StrCis,
+    pub rootpath: PathName4,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FSLocations4 {
-        pub fs_root: PathName4,
-        pub fs_locations: Vec<FSLocation4>,
+    pub fs_root: PathName4,
+    pub fs_locations: Vec<FSLocation4>,
 }
 
 pub type AceType4 = u32;
@@ -91,10 +91,10 @@ pub type AceMask4 = u32;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NFSAce4 {
-        pub type_field: AceType4,
-        pub flag: AceFlag4,
-        pub access_mask: AceMask4,
-        pub who: Utf8StrMixed,
+    pub type_field: AceType4,
+    pub flag: AceFlag4,
+    pub access_mask: AceMask4,
+    pub who: Utf8StrMixed,
 }
 
 pub const NFS4_FHSIZE: usize = 128;

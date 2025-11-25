@@ -25,11 +25,17 @@ fn main() {
         .read(true)
         .open(format!("{}", args[1]))
         .unwrap();
-    
+
     let mut fattr_builder = FAttr4Builder::new();
     fattr_builder.set_file_size(0);
-    
-    session.set_attr(&opened_file.file_handle, &fattr_builder.build(), &opened_file.state_id).unwrap();
+
+    session
+        .set_attr(
+            &opened_file.file_handle,
+            &fattr_builder.build(),
+            &opened_file.state_id,
+        )
+        .unwrap();
     let mut buf: [u8; 1024] = [0; 1024];
     loop {
         let count = f.read(&mut buf).unwrap();

@@ -4,11 +4,11 @@ use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 
 use crate::NFSCRSInnerError;
-use crate::nfs4_types::Component4;
 use crate::fattr4::FAttr4;
+use crate::nfs4_types::Component4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AbsolutePath<'a>(Cow<'a, Path>);// we assume no '.' and '..' in path, 
+pub struct AbsolutePath<'a>(Cow<'a, Path>); // we assume no '.' and '..' in path, 
 
 impl<'a> AbsolutePath<'a> {
     /// Access inner `Cow<Path>` if needed
@@ -18,7 +18,7 @@ impl<'a> AbsolutePath<'a> {
     pub fn into_owned(self) -> AbsolutePath<'static> {
         AbsolutePath(Cow::Owned(self.0.into_owned()))
     }
-    
+
     pub fn is_root(&self) -> bool {
         self.0.components().all(|c| matches!(c, Component::RootDir))
     }
@@ -118,11 +118,12 @@ impl DirEntry {
     }
 }
 
-mod misc{
+mod misc {
     use std::path::Component;
     use std::path::Path;
 
     pub(crate) fn contains_current_or_parent(path: &Path) -> bool {
-        path.components().any(|c| matches!(c, Component::CurDir | Component::ParentDir))
+        path.components()
+            .any(|c| matches!(c, Component::CurDir | Component::ParentDir))
     }
 }

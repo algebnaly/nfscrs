@@ -156,10 +156,12 @@ impl FAttr4 {
         let mode: u32 = 0o640;
         fattr4_from_file_mode(mode)
     }
-    
+
     // assume bit_nums are sorted acsending
-    pub fn fetch_attr_vals_raw(&self, bit_nums: &[usize]) -> Result<Vec<Vec<u8>>, NFSCRSInnerError>{
-        
+    pub fn fetch_attr_vals_raw(
+        &self,
+        bit_nums: &[usize],
+    ) -> Result<Vec<Vec<u8>>, NFSCRSInnerError> {
         let mut attr_val_list: Vec<Vec<u8>> = Vec::new();
         let mut remaining_bytes = self.attr_vals.as_slice();
 
@@ -175,12 +177,14 @@ impl FAttr4 {
             attr_val_list.push(remaining_bytes[..attr_len].to_vec());
             remaining_bytes = &remaining_bytes[attr_len..];
         }
-        if remaining_bytes.len() != 0{
-            return Err(NFSCRSInnerError::InvalidArgument("invalid attribute bytes".to_string()))
+        if remaining_bytes.len() != 0 {
+            return Err(NFSCRSInnerError::InvalidArgument(
+                "invalid attribute bytes".to_string(),
+            ));
         }
         Ok(attr_val_list)
     }
-    
+
     pub fn fetch_attr_raw(&self, bit_num: usize) -> Result<ByteBuf, NFSCRSInnerError> {
         let attr_list = attr_mask_to_list(&self.attr_mask);
 
@@ -205,7 +209,6 @@ impl FAttr4 {
             }
 
             if attr_index == target_index {
-                
                 return Ok(remaining_bytes[..attr_len].to_vec().into());
             }
             remaining_bytes = &remaining_bytes[attr_len..];

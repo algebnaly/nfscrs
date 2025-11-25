@@ -5,5 +5,7 @@ fn main() {
     let mut session = client_builder
         .establish_session()
         .expect("failed to establish session");
-    session.mkdir(&"/a/b/c".parse().unwrap(), true, false).unwrap();
+    session
+        .mkdir(&"/a/b/c".parse().unwrap(), true, false)
+        .unwrap();
 }
