@@ -16,7 +16,10 @@ impl NFSClientSession {
             .map_err(|e| NFSCRSError::InnerError(e.into()))?;
 
         let mut opened_file = self.open(path, open_options)?;
-        if opened_file.need_confirm(){
+
+        // Only when the OPEN4_RESULT_CONFIRM bit is set in rflags
+        // will need open confirm operation
+        if opened_file.need_confirm() {
             opened_file = self.open_confirm(opened_file)?;
         }
 

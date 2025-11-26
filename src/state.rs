@@ -3,12 +3,11 @@ use crate::{
     nfs4_types::{Count4, NFSFH4, SeqId4},
     nfscrs_types::AbsolutePath,
     nfsv4_ops::{
-        GetFH4ResultOk, Open4ResultOk, OpenDelegation4, OpenFlag4, Read4ResultOk, StableHow4,
-        StateId4, Verifier4,
+        GetFH4ResultOk, Open4ResultOk, OpenDelegation4, Read4ResultOk, StableHow4, StateId4,
+        Verifier4,
     },
     xdr_types::Opaque,
 };
-
 
 #[derive(Debug)]
 pub struct OpenedFileBuilder {
@@ -28,7 +27,7 @@ impl OpenedFileBuilder {
             delegation: self.open_result.delegation,
             share_access: self.share_access,
             share_deny: self.share_deny,
-            rflag: self.open_result.rflags,
+            rflags: self.open_result.rflags,
             path: self.path,
             offset: 0,
             open_owner_seq_id: self.open_owner_seq_id,
@@ -43,7 +42,7 @@ pub struct OpenedFile {
     pub delegation: OpenDelegation4,
     pub share_access: u32,
     pub share_deny: u32,
-    pub rflag: u32,
+    pub rflags: u32,
     pub offset: usize,
     pub open_owner_seq_id: SeqId4,
     pub path: AbsolutePath<'static>,
@@ -51,10 +50,9 @@ pub struct OpenedFile {
 
 impl OpenedFile {
     pub fn need_confirm(&self) -> bool {
-        (self.rflag & crate::nfs4_open::OPEN4_RESULT_CONFIRM) != 0
+        (self.rflags & crate::nfs4_open::OPEN4_RESULT_CONFIRM) != 0
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct OpenOptions {

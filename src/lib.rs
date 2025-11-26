@@ -35,12 +35,12 @@ mod auth;
 mod constants;
 pub mod fattr4;
 pub mod fattr4_utils;
+pub mod nfs4_open;
 pub mod nfs4_open_owner;
 pub mod nfs4_types;
 pub mod nfs4_utils;
 pub mod nfscrs_error;
 pub mod nfscrs_types;
-pub mod nfs4_open;
 mod nfsv4_ops;
 mod nfsv4_rpc_def;
 mod oncrpc_msg;
@@ -443,7 +443,6 @@ impl NFSClientSession {
 
         let share_access = open_args.share_access;
         let share_deny = open_args.share_deny;
-        let open_flag = open_args.open_how.clone();
 
         cops.add_operation(NFSArgOp4::OP_OPEN(open_args));
         cops.add_operation(NFSArgOp4::OP_GETFH);
@@ -468,7 +467,7 @@ impl NFSClientSession {
                 NFSCRSInnerError::WrongMessageType("expecting Open4Result".to_owned()).into(),
             );
         };
-        
+
         println!("open_result_ok: {:?}", open_result_ok.state_id);
 
         let opening_file = OpenedFileBuilder {
@@ -492,7 +491,7 @@ impl NFSClientSession {
         let seq_id = self.open_owner.seq_id;
         println!("open_confirm seq_id: {}", seq_id);
         self.open_owner.seq_id += 1;
-        
+
         println!("state_id.seq_id: {}", opened_file.state_id.seq_id);
         let open_confirm_args = OpenConfirm4Args {
             open_stateid: opened_file.state_id.clone(),
@@ -516,9 +515,9 @@ impl NFSClientSession {
             )
             .into());
         };
-        
+
         opened_file.state_id = open_confirm_result_ok.open_stateid;
-        
+
         Ok(opened_file)
     }
 
@@ -793,7 +792,7 @@ impl NFSClientSession {
                     let create_arg = NFSArgOp4::OP_CREATE(Create4Args {
                         obj_type: CreateType4::NF4DIR,
                         obj_name: ByteBuf::from(name.as_bytes()),
-                        create_attrs: FAttr4::simple_dir_attr(),
+                        create_attrs: FAttr4::simple_dir_attr(), // TODO: setup dir attr
                     });
                     cops.add_operation(create_arg);
                 }
