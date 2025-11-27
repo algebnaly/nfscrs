@@ -436,7 +436,6 @@ impl NFSClientSession {
         push_lookup_ops(&mut cops, &dirs)?;
 
         let seq_id = self.open_owner.seq_id;
-        println!("open: seq_id: {seq_id}");
         self.open_owner.seq_id += 1;
 
         let open_args = Open4Args::with_open_options(self, filename, seq_id, open_options);
@@ -468,8 +467,6 @@ impl NFSClientSession {
             );
         };
 
-        println!("open_result_ok: {:?}", open_result_ok.state_id);
-
         let opening_file = OpenedFileBuilder {
             get_fh_result: get_fh_result_ok,
             open_result: open_result_ok,
@@ -489,10 +486,8 @@ impl NFSClientSession {
         }));
 
         let seq_id = self.open_owner.seq_id;
-        println!("open_confirm seq_id: {}", seq_id);
         self.open_owner.seq_id += 1;
 
-        println!("state_id.seq_id: {}", opened_file.state_id.seq_id);
         let open_confirm_args = OpenConfirm4Args {
             open_stateid: opened_file.state_id.clone(),
             seq_id,
@@ -770,7 +765,6 @@ impl NFSClientSession {
         target_dir: &AbsolutePath,
         exist_part: &AbsolutePath,
     ) -> Result<(), NFSCRSError> {
-        println!("exist_part: {}", exist_part.display());
         // assume exists_part is a subpath or target dir
         let stripped_path = target_dir.strip_prefix(exist_part).map_err(|e| {
             NFSCRSInnerError::InvalidArgument(format!("failed to strip_prefix: {:?}", e))
@@ -809,7 +803,6 @@ impl NFSClientSession {
         if result.is_status_ok() {
             Ok(())
         } else {
-            println!("failed to create directory");
             Err(NFSCRSError::NFSStatError(result.status))
         }
     }
