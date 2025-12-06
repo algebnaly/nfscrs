@@ -318,7 +318,7 @@ impl NFSClientSession {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, path)?;
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args::new(attr_list)));
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
         } // is last status is ok, then all operation are ok
@@ -331,7 +331,7 @@ impl NFSClientSession {
     pub fn put_root_fh(&mut self) -> Result<(), NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
         }
@@ -349,7 +349,7 @@ impl NFSClientSession {
         }
         Ok(())
     }
-    fn send_cops_and_get_result(
+    fn send_ops_and_get_result(
         &mut self,
         cops: &NFS4CompoundProcedure,
     ) -> Result<Compound4Result, NFSCRSError> {
@@ -388,7 +388,7 @@ impl NFSClientSession {
             push_lookup_ops(&mut cops, path)?;
             cops.add_operation(NFSArgOp4::OP_READDIR(readdir_args));
 
-            let mut result = self.send_cops_and_get_result(&cops)?;
+            let mut result = self.send_ops_and_get_result(&cops)?;
             if !result.is_status_ok() {
                 return Err(NFSCRSError::OperationError("readdir failed!".to_owned()));
             }
@@ -445,7 +445,7 @@ impl NFSClientSession {
 
         cops.add_operation(NFSArgOp4::OP_OPEN(open_args));
         cops.add_operation(NFSArgOp4::OP_GETFH);
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -495,7 +495,7 @@ impl NFSClientSession {
 
         cops.add_operation(NFSArgOp4::OP_OPEN_CONFIRM(open_confirm_args));
 
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -528,7 +528,7 @@ impl NFSClientSession {
             seq_id,
             open_state_id: opened_file.state_id.clone(),
         }));
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -557,7 +557,7 @@ impl NFSClientSession {
             offset: opened_file.offset as Offset4,
             count: count as Count4,
         }));
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -590,7 +590,7 @@ impl NFSClientSession {
             stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
         }));
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -636,7 +636,7 @@ impl NFSClientSession {
             obj_attributes: fattr4.clone(),
         };
         cops.add_operation(NFSArgOp4::OP_SETATTR(set_attr_op));
-        let mut result = self.send_cops_and_get_result(&cops)?;
+        let mut result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -656,7 +656,7 @@ impl NFSClientSession {
     fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
-        let mut result = self.send_cops_and_get_result(&cops)?;
+        let mut result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -680,7 +680,7 @@ impl NFSClientSession {
     ) -> Result<AbsolutePath<'static>, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, &path)?;
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         let prev_len = cops.argarray.len();
         let succ_len = if result.is_status_ok() {
             prev_len
@@ -799,7 +799,7 @@ impl NFSClientSession {
                 }
             }
         }
-        let result = self.send_cops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result(&cops)?;
         if result.is_status_ok() {
             Ok(())
         } else {
