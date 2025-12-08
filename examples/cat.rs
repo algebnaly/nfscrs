@@ -9,10 +9,9 @@ fn main() {
         .expect("failed to establish session");
 
     let open_opt = OpenOptions::new().read(true);
-    let opening_file = session
-        .open(&"/note.md".try_into().unwrap(), open_opt)
+    let mut opened_file = session
+        .open_file(&"/note.md".try_into().unwrap(), open_opt)
         .unwrap();
-    let mut opened_file = session.open_confirm(opening_file).unwrap();
     let mut buf: Vec<u8> = Vec::new();
     loop {
         let read_result = session.read(&mut opened_file, 1024).unwrap();

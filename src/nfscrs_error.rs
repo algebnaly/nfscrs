@@ -36,6 +36,8 @@ pub enum NFSCRSInnerError {
     WrongOperationReply(String),
     #[error("failed to lock: {0}")]
     PoisonedMutex(String),
+    #[error("illegal state: {0}")]
+    IllegalState(String)
 }
 
 impl<T> From<PoisonError<T>> for NFSCRSInnerError {

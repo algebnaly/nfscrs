@@ -6,13 +6,14 @@ use std::{
     net::{SocketAddr, TcpStream},
     os::unix::ffi::OsStrExt,
     path::{Component, Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, atomic::Ordering},
 };
 
 use crate::{
     auth::AuthType,
     constants::{READDIR_DEFAULT_ATTR, READDIR_MAX_COUNT},
-    fattr4::FAttr4,
+    fattr4::{FAttr4, FAttr4Type, fattr4_names},
+    fattr4_utils::bit_nums_to_attr_mask,
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_error::{NFSCRSError, NFSCRSInnerError},
     nfscrs_types::{AbsolutePath, DirEntry},
@@ -64,8 +65,7 @@ pub struct NFSClientSession {
     stream: TcpStream,
     remote_addr: SocketAddr,
     client_id: ClientId4,
-    open_owner: crate::nfs4_open_owner::OpenOwner,
-    open_owner_lock: Arc<Mutex<()>>,
+    open_owner: Arc<crate::nfs4_open_owner::OpenOwner>,
 }
 
 impl NFSClientBuilder {
@@ -218,11 +218,9 @@ impl NFSClientBuilder {
             stream,
             remote_addr: self.remote_addr,
             client_id,
-            open_owner: crate::nfs4_open_owner::OpenOwner {
-                owner: ByteBuf::from(b"simple_open"),
-                seq_id: 0,
-            },
-            open_owner_lock: Arc::new(Mutex::new(())),
+            open_owner: Arc::new(crate::nfs4_open_owner::OpenOwner::new(ByteBuf::from(
+                b"simple_open",
+            ))),
         })
     }
 }
@@ -423,8 +421,7 @@ impl NFSClientSession {
         Ok(dir_entry_list)
     }
 
-    // TODO handle seq_id outside open and open_confirm method
-    pub fn open(
+    pub(crate) fn open(
         &mut self,
         path: &AbsolutePath,
         open_options: OpenOptions,
@@ -435,15 +432,32 @@ impl NFSClientSession {
 
         push_lookup_ops(&mut cops, &dirs)?;
 
-        let seq_id = self.open_owner.seq_id;
-        self.open_owner.seq_id += 1;
+        let open_owner_ref = self.open_owner.clone();
+        let path_clone = path.clone().into_owned();
 
-        let open_args = Open4Args::with_open_options(self, filename, seq_id, open_options);
+        if let Some(file_key_inner) = open_owner_ref.path_map.get(&path_clone)
+            && let Some(file_open_state) = open_owner_ref.files.get(&file_key_inner)
+        {
+            let share_access = open_options.get_share_access();
+
+            file_open_state.ref_count_inc();
+            return Ok(file_open_state.get_opened_file(share_access, 0, path_clone));
+        }
+
+        let seq_id_val = open_owner_ref.seq_id.fetch_add(1, Ordering::SeqCst);
+
+        let open_args = Open4Args::with_open_options(self, filename, seq_id_val, open_options);
 
         let share_access = open_args.share_access;
         let share_deny = open_args.share_deny;
 
         cops.add_operation(NFSArgOp4::OP_OPEN(open_args));
+        cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args {
+            attr_request: bit_nums_to_attr_mask(&[
+                fattr4_names::FATTR4_FSID,
+                fattr4_names::FATTR4_FILEID,
+            ]),
+        }));
         cops.add_operation(NFSArgOp4::OP_GETFH);
         let result = self.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
@@ -460,6 +474,43 @@ impl NFSClientSession {
                 NFSCRSInnerError::WrongMessageType("expecting GetFH4Result".to_owned()).into(),
             );
         };
+
+        let get_attr_result = res_array.pop().unwrap();
+        let NFSResultOp4::OP_GETATTR(GetAttr4Result::NFS4_OK(get_attr_result_ok)) = get_attr_result
+        else {
+            return Err(
+                NFSCRSInnerError::WrongMessageType("expecting GetAttr4Result".to_owned()).into(),
+            );
+        };
+
+        let fsid = match get_attr_result_ok
+            .obj_attributes
+            .fetch_attr(fattr4_names::FATTR4_FSID)?
+        {
+            FAttr4Type::FATTR4_FSID(fsid) => fsid,
+            other => {
+                return Err(NFSCRSInnerError::WrongOperationReply(format!(
+                    "expecting fsid but get {:?}",
+                    other,
+                ))
+                .into());
+            }
+        };
+
+        let file_id = match get_attr_result_ok
+            .obj_attributes
+            .fetch_attr(fattr4_names::FATTR4_FILEID)?
+        {
+            FAttr4Type::FATTR4_FILEID(file_id) => file_id,
+            other => {
+                return Err(NFSCRSInnerError::WrongOperationReply(format!(
+                    "expecting file_id but get {:?}",
+                    other,
+                ))
+                .into());
+            }
+        };
+
         let open_result = res_array.pop().unwrap();
         let NFSResultOp4::OP_OPEN(Open4Result::NFS4_OK(open_result_ok)) = open_result else {
             return Err(
@@ -467,30 +518,56 @@ impl NFSClientSession {
             );
         };
 
+        let file_key = FileKey { fsid, file_id };
+
+        let state_id = open_result_ok.state_id.clone();
+
         let opening_file = OpenedFileBuilder {
-            get_fh_result: get_fh_result_ok,
-            open_result: open_result_ok,
-            share_access,
-            share_deny,
-            open_owner_seq_id: seq_id,
+            file_key,
+            get_fh_result: get_fh_result_ok.clone(),
+            open_result: open_result_ok.clone(),
+            requested_share_access: share_access,
+            requested_share_deny: share_deny,
             path: path.clone().into_owned(),
         }
         .build()?;
+
+        open_owner_ref.files.insert(
+            file_key,
+            OpenFileState::new(
+                get_fh_result_ok.object,
+                file_key,
+                state_id,
+                share_access,
+                share_deny,
+                open_result_ok.rflags,
+            ),
+        );
+        open_owner_ref.path_map.insert(path_clone, file_key);
         Ok(opening_file)
     }
 
-    pub fn open_confirm(&mut self, mut opened_file: OpenedFile) -> Result<OpenedFile, NFSCRSError> {
+    pub(crate) fn open_confirm(
+        &mut self,
+        opened_file: OpenedFile,
+    ) -> Result<OpenedFile, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
             object: opened_file.file_handle.clone(),
         }));
+        let open_owner_ref = self.open_owner.clone();
 
-        let seq_id = self.open_owner.seq_id;
-        self.open_owner.seq_id += 1;
+        let seq_id_val = open_owner_ref.seq_id.fetch_add(1, Ordering::SeqCst);
+
+        let mut file_open_state = open_owner_ref.files.get_mut(&opened_file.file_key).ok_or(
+            NFSCRSInnerError::InvalidArgument("open_confirm with no file open".to_string()),
+        )?;
+
+        let state_id = file_open_state.get_state_id()?;
 
         let open_confirm_args = OpenConfirm4Args {
-            open_stateid: opened_file.state_id.clone(),
-            seq_id,
+            open_stateid: state_id,
+            seq_id: seq_id_val,
         };
 
         cops.add_operation(NFSArgOp4::OP_OPEN_CONFIRM(open_confirm_args));
@@ -511,36 +588,87 @@ impl NFSClientSession {
             .into());
         };
 
-        opened_file.state_id = open_confirm_result_ok.open_stateid;
-
+        file_open_state.update_state_id(open_confirm_result_ok.open_stateid)?;
+        file_open_state.set_confirmed();
         Ok(opened_file)
     }
 
-    pub fn close(&mut self, opened_file: &mut OpenedFile) -> Result<StateId4, NFSCRSError> {
-        let seq_id = self.open_owner.seq_id;
-        self.open_owner.seq_id += 1;
+    pub fn close(&mut self, opened_file: &mut OpenedFile) -> Result<(), NFSCRSError> {
+        let open_owner_ref = self.open_owner.clone();
+        let _guard = open_owner_ref
+            .lock_path(&opened_file.path)
+            .map_err(|e| NFSCRSInnerError::PoisonedMutex(format!("{:?}", e)))?;
 
-        let mut cops = NFS4CompoundProcedure::new();
-        cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
-            object: opened_file.file_handle.clone(),
-        }));
-        cops.add_operation(NFSArgOp4::OP_CLOSE(Close4Args {
-            seq_id,
-            open_state_id: opened_file.state_id.clone(),
-        }));
-        let result = self.send_ops_and_get_result(&cops)?;
-        if !result.is_status_ok() {
-            return Err(NFSCRSError::NFSStatError(result.status));
+        let state_id: StateId4;
+        let needs_close: bool;
+        {
+            let mut file_open_state_entry = match open_owner_ref.files.entry(opened_file.file_key) {
+                dashmap::Entry::Occupied(v) => v,
+                dashmap::Entry::Vacant(_) => {
+                    return Err(NFSCRSInnerError::InvalidArgument(
+                        "cannot close a file that not open".to_string(),
+                    )
+                    .into());
+                }
+            };
+
+            let pre_ref_count = file_open_state_entry.get_mut().ref_count_dec();
+            if pre_ref_count <= 0 {
+                return Err(NFSCRSInnerError::InvalidArgument(
+                    "ref count smaller than 0".to_string(),
+                )
+                .into());
+            }
+
+            if pre_ref_count > 1 {
+                return Ok(());
+            }
+            state_id = file_open_state_entry.get().get_state_id()?;
+            needs_close = true;
+        }// release file_open_state_entry
+
+        if needs_close {
+            let seq_id_val = self.open_owner.seq_id.fetch_add(1, Ordering::SeqCst);
+
+            let mut cops = NFS4CompoundProcedure::new();
+            cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
+                object: opened_file.file_handle.clone(),
+            }));
+            cops.add_operation(NFSArgOp4::OP_CLOSE(Close4Args {
+                seq_id: seq_id_val,
+                open_state_id: state_id,
+            }));
+
+            let result = match self.send_ops_and_get_result(&cops) {
+                Ok(res) => res,
+                Err(e) => {
+                    if let Some(entry) = open_owner_ref.files.get_mut(&opened_file.file_key) {
+                        entry.ref_count_inc();
+                    }
+                    return Err(e);
+                }
+            };
+
+            if !result.is_status_ok() {
+                return Err(NFSCRSError::NFSStatError(result.status));
+            }
+            let mut res_array = result.resarray;
+            let close_result = res_array.pop().unwrap();
+            let NFSResultOp4::OP_CLOSE(Close4Result::NFS4_OK(_close_result_seq_id)) = close_result
+            else {
+                return Err(NFSCRSInnerError::WrongMessageType(
+                    "expecting Close4Result".to_owned(),
+                )
+                .into());
+            };
         }
-        let mut res_array = result.resarray;
-        let close_result = res_array.pop().unwrap();
-        let NFSResultOp4::OP_CLOSE(Close4Result::NFS4_OK(close_result_seq_id)) = close_result
-        else {
-            return Err(
-                NFSCRSInnerError::WrongMessageType("expecting Close4Result".to_owned()).into(),
-            );
-        };
-        Ok(close_result_seq_id)
+        
+        open_owner_ref.files.remove(&opened_file.file_key);
+        open_owner_ref.path_map.remove(&opened_file.path).ok_or(
+            NFSCRSInnerError::IllegalState("failed to remove opened file state".to_string()),
+        )?;
+
+        Ok(())
     }
 
     pub fn read(
@@ -548,12 +676,19 @@ impl NFSClientSession {
         opened_file: &mut OpenedFile,
         count: usize,
     ) -> Result<ReadResult, NFSCRSError> {
+        let open_owner_ref = self.open_owner.clone();
+        let file_open_state = open_owner_ref.files.get(&opened_file.file_key).ok_or(
+            NFSCRSInnerError::InvalidArgument("cannot close a file that not open".to_string()),
+        )?;
+
+        let state_id = file_open_state.get_state_id()?;
+
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
             object: opened_file.file_handle.clone(),
         }));
         cops.add_operation(NFSArgOp4::OP_READ(Read4Args {
-            state_id: opened_file.state_id.clone(),
+            state_id: state_id,
             offset: opened_file.offset as Offset4,
             count: count as Count4,
         }));
@@ -575,17 +710,26 @@ impl NFSClientSession {
 
         Ok(read_result_ok.into())
     }
+
     pub fn write(
         &mut self,
         opened_file: &mut OpenedFile,
         data: &[u8],
     ) -> Result<WriteResult, NFSCRSError> {
+        let open_owner_ref = self.open_owner.clone();
+        let file_open_state = open_owner_ref.files.get(&opened_file.file_key).ok_or(
+            NFSCRSInnerError::InvalidArgument("cannot close a file that not open".to_string()),
+        )?;
+
+        let state_id = file_open_state.get_state_id()?;
+
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
             object: opened_file.file_handle.clone(),
         }));
+
         cops.add_operation(NFSArgOp4::OP_WRITE(Write4Args {
-            state_id: opened_file.state_id.clone(),
+            state_id: state_id,
             offset: opened_file.offset as u64,
             stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
@@ -616,10 +760,18 @@ impl NFSClientSession {
         path: &AbsolutePath,
         fattr4: FAttr4,
     ) -> Result<BitMap4, NFSCRSError> {
-        let opening_file = self.open(path, OpenOptions::new().write(true))?;
-        let opened_file = self.open_confirm(opening_file)?;
-        let bitmap = self.set_attr(&opened_file.file_handle, &fattr4, &opened_file.state_id)?;
-        //TODO: need a close operation here
+        let mut opened_file = self.open_file(path, OpenOptions::new().write(true))?;
+
+        let open_owner_ref = self.open_owner.clone();
+        let file_open_state = open_owner_ref.files.get(&opened_file.file_key).ok_or(
+            NFSCRSInnerError::IllegalState("file should opened".to_string()),
+        )?;
+
+        let state_id = file_open_state.get_state_id()?;
+
+        let bitmap = self.set_attr(&opened_file.file_handle, &fattr4, &state_id)?;
+
+        self.close(&mut opened_file)?;
         Ok(bitmap)
     }
 
@@ -760,6 +912,20 @@ impl NFSClientSession {
 
         self.create_dir_inner(path, &exist_part)
     }
+
+    pub fn open_file_need_confirm(&self, opened_file: &OpenedFile) -> Result<bool, NFSCRSError> {
+        let file_key = opened_file.file_key;
+        let open_owner_ref = self.open_owner.clone();
+        let open_file_state =
+            open_owner_ref
+                .files
+                .get(&file_key)
+                .ok_or(NFSCRSInnerError::IllegalState(
+                    "opened file not found".to_string(),
+                ))?;
+        Ok(open_file_state.need_confirm())
+    }
+
     fn create_dir_inner(
         &mut self,
         target_dir: &AbsolutePath,

@@ -1,10 +1,15 @@
+use std::sync::{
+    RwLock,
+    atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+};
+
 use crate::{
     NFSCRSInnerError,
-    nfs4_types::{Count4, NFSFH4, SeqId4},
-    nfscrs_types::AbsolutePath,
+    nfs4_types::{Count4, FSId4, NFSFH4},
+    nfscrs_types::{AbsolutePath, AbsolutePathOwned},
     nfsv4_ops::{
-        GetFH4ResultOk, Open4ResultOk, OpenDelegation4, Read4ResultOk, StableHow4, StateId4,
-        Verifier4,
+        GetFH4ResultOk, Open4ResultOk, Read4ResultOk, StableHow4, StateId4,
+        Verifier4, open_params,
     },
     xdr_types::Opaque,
 };
@@ -13,24 +18,21 @@ use crate::{
 pub struct OpenedFileBuilder {
     pub get_fh_result: GetFH4ResultOk,
     pub open_result: Open4ResultOk,
-    pub share_access: u32,
-    pub share_deny: u32,
-    pub open_owner_seq_id: u32,
+    pub requested_share_access: u32,
+    pub requested_share_deny: u32,
     pub path: AbsolutePath<'static>,
+    pub file_key: FileKey,
 }
 
 impl OpenedFileBuilder {
     pub fn build(self) -> Result<OpenedFile, NFSCRSInnerError> {
         Ok(OpenedFile {
-            state_id: self.open_result.state_id,
+            file_key: self.file_key,
             file_handle: self.get_fh_result.object,
-            delegation: self.open_result.delegation,
-            share_access: self.share_access,
-            share_deny: self.share_deny,
-            rflags: self.open_result.rflags,
+            requested_share_access: self.requested_share_access,
+            requested_share_deny: self.requested_share_deny,
             path: self.path,
             offset: 0,
-            open_owner_seq_id: self.open_owner_seq_id,
         })
     }
 }
@@ -38,21 +40,14 @@ impl OpenedFileBuilder {
 #[derive(Debug)]
 pub struct OpenedFile {
     pub file_handle: NFSFH4,
-    pub state_id: StateId4,
-    pub delegation: OpenDelegation4,
-    pub share_access: u32,
-    pub share_deny: u32,
-    pub rflags: u32,
+    pub file_key: FileKey,
+    pub requested_share_access: u32,
+    pub requested_share_deny: u32,
     pub offset: usize,
-    pub open_owner_seq_id: SeqId4,
-    pub path: AbsolutePath<'static>,
+    pub path: AbsolutePathOwned,
 }
 
-impl OpenedFile {
-    pub fn need_confirm(&self) -> bool {
-        (self.rflags & crate::nfs4_open::OPEN4_RESULT_CONFIRM) != 0
-    }
-}
+impl OpenedFile {}
 
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
@@ -90,6 +85,17 @@ impl OpenOptions {
         self.truncate = truncate;
         self
     }
+    
+    pub fn get_share_access(&self) -> u32 {
+        let share_access = if self.read && !self.write {
+            open_params::OPEN4_SHARE_ACCESS_READ
+        } else if !self.read && self.write {
+            open_params::OPEN4_SHARE_ACCESS_WRITE
+        } else {
+            open_params::OPEN4_SHARE_ACCESS_BOTH
+        };
+        share_access
+    }
 }
 
 impl Default for OpenOptions {
@@ -116,4 +122,96 @@ pub struct WriteResult {
     pub count: Count4,
     pub committed: StableHow4,
     pub writeverf: Verifier4,
+}
+
+pub struct OpenFileState {
+    refcount: AtomicUsize,
+    file_handle: NFSFH4,
+    file_key: FileKey,
+    state_id: RwLock<StateId4>,
+    pub share_access: AtomicU32,
+    pub share_deny: AtomicU32,
+    pub confirmed: AtomicBool,
+    rflags: AtomicU32,
+    // we do not support file lock for now
+    //pub delegation: RwLock<Option<OpenDelegation4>>,
+}
+
+impl OpenFileState {
+    pub fn new(
+        file_handle: NFSFH4,
+        file_key: FileKey,
+        state_id: StateId4,
+        share_access: u32,
+        share_deny: u32,
+        rflags: u32
+    ) -> Self {
+        let confirmed = rflags & crate::nfs4_open::OPEN4_RESULT_CONFIRM == 0;
+        Self {
+            refcount: AtomicUsize::new(1),
+            file_handle,
+            file_key,
+            state_id: RwLock::new(state_id),
+            share_access: AtomicU32::new(share_access),
+            share_deny: AtomicU32::new(share_deny),
+            confirmed: AtomicBool::new(confirmed),
+            rflags: AtomicU32::new(rflags),
+        }
+    }
+
+    pub fn get_state_id(&self) -> Result<StateId4, NFSCRSInnerError> {
+        let state_id_guard = self.state_id.read().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to read state_id: {:?}", e))
+        })?;
+
+        return Ok((&*state_id_guard).clone());
+    }
+
+    pub fn update_state_id(&mut self, state_id: StateId4) -> Result<(), NFSCRSInnerError> {
+        let mut state_id_guard = self.state_id.write().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to write state_id: {:?}", e))
+        })?;
+        *state_id_guard = state_id;
+        Ok(())
+    }
+
+    pub fn get_ref_count(&self) -> usize {
+        self.refcount.load(Ordering::Acquire)
+    }
+
+    pub fn ref_count_dec(&self) -> usize {
+        self.refcount.fetch_sub(1, Ordering::SeqCst)
+    }
+    pub fn ref_count_inc(&self) -> usize {
+        self.refcount.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn need_confirm(&self) -> bool {
+        !self.confirmed.load(Ordering::Acquire)
+    }
+
+    pub fn get_opened_file(
+        &self,
+        requested_share_access: u32,
+        requested_share_deny: u32,
+        path: AbsolutePathOwned,
+    ) -> OpenedFile {
+        OpenedFile {
+            file_handle: self.file_handle.clone(),
+            file_key: self.file_key,
+            requested_share_access,
+            requested_share_deny,
+            offset: 0,
+            path,
+        }
+    }
+    pub(crate) fn set_confirmed(&mut self) {
+        self.confirmed.store(true, Ordering::Release);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct FileKey {
+    pub fsid: FSId4,
+    pub file_id: u64,
 }

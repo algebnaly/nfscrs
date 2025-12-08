@@ -7,7 +7,10 @@ use crate::NFSCRSInnerError;
 use crate::fattr4::FAttr4;
 use crate::nfs4_types::Component4;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub type AbsolutePathOwned = AbsolutePath<'static>;
+pub type AbsolutePathRef<'a> = AbsolutePath<'a>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AbsolutePath<'a>(Cow<'a, Path>); // we assume no '.' and '..' in path, 
 
 impl<'a> AbsolutePath<'a> {

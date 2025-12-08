@@ -34,7 +34,7 @@ pub struct SpecData4 {
     pub spec_data_2: u32, /* minor device number */
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FSId4 {
     pub major: u64,
     pub minor: u64,

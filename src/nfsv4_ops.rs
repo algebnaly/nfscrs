@@ -509,13 +509,7 @@ impl Open4Args {
             owner: session.open_owner.owner.clone(),
         };
 
-        let share_access = if open_options.read && !open_options.write {
-            open_params::OPEN4_SHARE_ACCESS_READ
-        } else if !open_options.read && open_options.write {
-            open_params::OPEN4_SHARE_ACCESS_WRITE
-        } else {
-            open_params::OPEN4_SHARE_ACCESS_BOTH
-        };
+        let share_access = open_options.get_share_access();
 
         let mut fattr4_builder = FAttr4Builder::new();
         fattr4_builder.set_open_options(&open_options);
@@ -673,7 +667,7 @@ pub enum Open4Result {
     Default(u32),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Open4ResultOk {
     pub state_id: StateId4,          /* Stateid for open */
     pub cinfo: ChangeInfo4,          /* Directory change info */
@@ -682,14 +676,14 @@ pub struct Open4ResultOk {
     pub delegation: OpenDelegation4, /* Info on any open delegation */
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChangeInfo4 {
     pub atomic: bool,
     pub before: ChangeId4,
     pub after: ChangeId4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize,Clone)]
 pub struct GetFH4ResultOk {
     pub object: NFSFH4,
 }
