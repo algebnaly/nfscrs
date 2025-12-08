@@ -6,7 +6,7 @@ use std::{
     net::{SocketAddr, TcpStream},
     os::unix::ffi::OsStrExt,
     path::{Component, Path, PathBuf},
-    sync::{Arc, atomic::Ordering},
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
 use crate::{
@@ -62,7 +62,7 @@ pub struct NFSClientSession {
     xid: Cell<u32>,
     auth: AuthType,
     msg_reader: ONCRPCMessageReader,
-    stream: TcpStream,
+    stream: Arc<Mutex<TcpStream>>,
     remote_addr: SocketAddr,
     client_id: ClientId4,
     open_owner: Arc<crate::nfs4_open_owner::OpenOwner>,
@@ -215,7 +215,7 @@ impl NFSClientBuilder {
             xid: Cell::new(self.pop_xid()),
             auth: self.auth,
             msg_reader: self.msg_reader,
-            stream,
+            stream: Arc::new(Mutex::new(stream)),
             remote_addr: self.remote_addr,
             client_id,
             open_owner: Arc::new(crate::nfs4_open_owner::OpenOwner::new(ByteBuf::from(
@@ -251,16 +251,18 @@ impl NFSClientSession {
     fn send_msg<P: AsRef<[u8]>>(
         &mut self,
         msg: onc_rpc::RpcMessage<String, P>,
+        stream: &mut TcpStream,
     ) -> Result<(), NFSCRSError> {
         let buf = msg.serialise().unwrap();
-        let stream = &mut self.stream;
         stream.write(&buf).map_err(|e| {
             NFSCRSError::SendMessage(format!("failed to write to TcpStream: {e:?}"))
         })?;
         Ok(())
     }
-    fn read_reply(&mut self) -> Result<RpcMessage<onc_rpc::Bytes, onc_rpc::Bytes>, NFSCRSError> {
-        let stream = &mut self.stream;
+    fn read_reply(
+        &mut self,
+        stream: &mut TcpStream,
+    ) -> Result<RpcMessage<onc_rpc::Bytes, onc_rpc::Bytes>, NFSCRSError> {
         // stream.
         let reply = self.msg_reader.read(stream)?;
         Ok(reply)
@@ -300,8 +302,8 @@ impl NFSClientSession {
         self.get_onc_rpc_call_message(NFSPROC4_COMPOUND, payload)
     }
 
-    fn read_cops_result(&mut self) -> Result<Compound4Result, NFSCRSError> {
-        let reply = self.read_reply()?;
+    fn read_cops_result(&mut self, stream: &mut TcpStream) -> Result<Compound4Result, NFSCRSError> {
+        let reply = self.read_reply(stream)?;
         read_compound_result(&reply).map_err(|e| e.into())
     }
 
@@ -316,7 +318,12 @@ impl NFSClientSession {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, path)?;
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args::new(attr_list)));
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
         } // is last status is ok, then all operation are ok
@@ -329,7 +336,11 @@ impl NFSClientSession {
     pub fn put_root_fh(&mut self) -> Result<(), NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
         }
@@ -350,11 +361,12 @@ impl NFSClientSession {
     fn send_ops_and_get_result(
         &mut self,
         cops: &NFS4CompoundProcedure,
+        stream: &mut TcpStream,
     ) -> Result<Compound4Result, NFSCRSError> {
         let payload = cops.to_bytes()?;
         let msg = self.get_onc_rpc_compound_call_message(payload);
-        self.send_msg(msg)?;
-        self.read_cops_result()
+        self.send_msg(msg, stream)?;
+        self.read_cops_result(stream)
     }
 
     pub fn list_dir_path(
@@ -386,7 +398,11 @@ impl NFSClientSession {
             push_lookup_ops(&mut cops, path)?;
             cops.add_operation(NFSArgOp4::OP_READDIR(readdir_args));
 
-            let mut result = self.send_ops_and_get_result(&cops)?;
+            let stream_ref = self.stream.clone();
+            let mut stream = stream_ref.lock().map_err(|e| {
+                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+            })?;
+            let mut result = self.send_ops_and_get_result(&cops, &mut *stream)?;
             if !result.is_status_ok() {
                 return Err(NFSCRSError::OperationError("readdir failed!".to_owned()));
             }
@@ -459,7 +475,11 @@ impl NFSClientSession {
             ]),
         }));
         cops.add_operation(NFSArgOp4::OP_GETFH);
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -572,7 +592,11 @@ impl NFSClientSession {
 
         cops.add_operation(NFSArgOp4::OP_OPEN_CONFIRM(open_confirm_args));
 
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -625,7 +649,7 @@ impl NFSClientSession {
             }
             state_id = file_open_state_entry.get().get_state_id()?;
             needs_close = true;
-        }// release file_open_state_entry
+        } // release file_open_state_entry
 
         if needs_close {
             let seq_id_val = self.open_owner.seq_id.fetch_add(1, Ordering::SeqCst);
@@ -639,7 +663,11 @@ impl NFSClientSession {
                 open_state_id: state_id,
             }));
 
-            let result = match self.send_ops_and_get_result(&cops) {
+            let stream_ref = self.stream.clone();
+            let mut stream = stream_ref.lock().map_err(|e| {
+                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+            })?;
+            let result = match self.send_ops_and_get_result(&cops, &mut *stream) {
                 Ok(res) => res,
                 Err(e) => {
                     if let Some(entry) = open_owner_ref.files.get_mut(&opened_file.file_key) {
@@ -662,11 +690,14 @@ impl NFSClientSession {
                 .into());
             };
         }
-        
+
         open_owner_ref.files.remove(&opened_file.file_key);
-        open_owner_ref.path_map.remove(&opened_file.path).ok_or(
-            NFSCRSInnerError::IllegalState("failed to remove opened file state".to_string()),
-        )?;
+        open_owner_ref
+            .path_map
+            .remove(&opened_file.path)
+            .ok_or(NFSCRSInnerError::IllegalState(
+                "failed to remove opened file state".to_string(),
+            ))?;
 
         Ok(())
     }
@@ -692,7 +723,11 @@ impl NFSClientSession {
             offset: opened_file.offset as Offset4,
             count: count as Count4,
         }));
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -734,7 +769,11 @@ impl NFSClientSession {
             stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
         }));
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -788,7 +827,11 @@ impl NFSClientSession {
             obj_attributes: fattr4.clone(),
         };
         cops.add_operation(NFSArgOp4::OP_SETATTR(set_attr_op));
-        let mut result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let mut result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -808,7 +851,11 @@ impl NFSClientSession {
     fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
-        let mut result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let mut result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -832,7 +879,11 @@ impl NFSClientSession {
     ) -> Result<AbsolutePath<'static>, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, &path)?;
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         let prev_len = cops.argarray.len();
         let succ_len = if result.is_status_ok() {
             prev_len
@@ -965,7 +1016,11 @@ impl NFSClientSession {
                 }
             }
         }
-        let result = self.send_ops_and_get_result(&cops)?;
+        let stream_ref = self.stream.clone();
+        let mut stream = stream_ref.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+        let result = self.send_ops_and_get_result(&cops, &mut *stream)?;
         if result.is_status_ok() {
             Ok(())
         } else {
