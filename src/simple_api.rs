@@ -13,7 +13,7 @@ impl NFSClientSession {
         let open_owner_ref = self.open_owner.clone();
 
         let _guard = open_owner_ref
-            .lock_path(path)
+            .lock_path(path)// TODO: this is wrong, do not use per path lock here, we need lock 
             .map_err(|e| NFSCRSInnerError::PoisonedMutex(format!("{:?}", e)))?;
 
         let mut opened_file = self.open(path, open_options)?;

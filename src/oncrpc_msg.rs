@@ -12,6 +12,7 @@ pub enum ONCRPCMessageReaderError {
     MessageParseError(#[from] ONCRPCError),
 }
 
+#[derive(Debug)]
 pub struct ONCRPCMessageReader {
     fragment_parts_buf: Vec<u8>, // imcomplete fragment goes here
     message_parts_buf: Vec<u8>,  // imcomplete message goes here

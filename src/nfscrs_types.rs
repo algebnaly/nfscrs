@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::ops::Deref;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
@@ -106,6 +107,12 @@ impl<'a> AsRef<Path> for AbsolutePath<'a> {
     fn as_ref(&self) -> &Path {
         // self.deref() 也可以，因为你实现了 Deref
         self.0.as_ref()
+    }
+}
+
+impl<'a> Display for AbsolutePath<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.0.display()))
     }
 }
 

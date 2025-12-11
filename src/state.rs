@@ -124,6 +124,7 @@ pub struct WriteResult {
     pub writeverf: Verifier4,
 }
 
+#[derive(Debug)]
 pub struct OpenFileState {
     refcount: AtomicUsize,
     file_handle: NFSFH4,

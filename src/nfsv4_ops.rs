@@ -50,7 +50,7 @@ pub enum NFSArgOp4 {
     OP_READLINK,                                     //void;
     OP_REMOVE,                                       //REMOVE4args opremove;
     OP_RENAME,                                       //RENAME4args oprename;
-    OP_RENEW,                                        //RENEW4args oprenew;
+    OP_RENEW(Renew4Args),                            //RENEW4args oprenew;
     OP_RESTOREFH,                                    //void;
     OP_SAVEFH,                                       //void;
     OP_SECINFO,                                      //SECINFO4args opsecinfo;
@@ -95,7 +95,7 @@ pub enum NFSResultOp4 {
     OP_READLINK,
     OP_REMOVE,
     OP_RENAME,
-    OP_RENEW,
+    OP_RENEW(Renew4Result),
     OP_RESTOREFH,
     OP_SAVEFH,
     OP_SECINFO,
@@ -683,7 +683,7 @@ pub struct ChangeInfo4 {
     pub after: ChangeId4,
 }
 
-#[derive(Debug, Deserialize,Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GetFH4ResultOk {
     pub object: NFSFH4,
 }
@@ -843,4 +843,14 @@ pub enum Close4Result {
     NFS4_OK(StateId4),
     #[default_arm]
     Default(u32),
+}
+
+#[derive(Debug, Serialize)]
+pub struct Renew4Args {
+    pub client_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Renew4Result{
+    pub status: NFSStat4
 }

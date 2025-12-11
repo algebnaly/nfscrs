@@ -1,7 +1,5 @@
 use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    iter,
-    sync::{LockResult, Mutex, MutexGuard, atomic::AtomicU32},
+    fmt::Formatter, hash::{DefaultHasher, Hash, Hasher}, iter, sync::{LockResult, Mutex, MutexGuard, atomic::{AtomicU32, Ordering}}
 };
 
 use dashmap::DashMap;
@@ -21,6 +19,18 @@ pub struct OpenOwner {
     pub files: DashMap<FileKey, OpenFileState>,
     pub path_map: DashMap<AbsolutePathOwned, FileKey>,
     pub path_locks: Vec<Mutex<()>>, // protect `files` and `path_map` keep in sync
+}
+
+impl std::fmt::Debug for OpenOwner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let owner_str = String::from_utf8_lossy(&self.owner);
+        f.debug_struct("OpenOwner")
+            .field("owner", &owner_str)
+            .field("seq_id", &self.seq_id.load(Ordering::Relaxed))
+            .field("files_count", &self.files.len())
+            .field("path_map_count", &self.path_map.len())
+            .finish()
+    }
 }
 
 impl OpenOwner {
