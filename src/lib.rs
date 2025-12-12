@@ -7,7 +7,7 @@ use std::{
     net::{SocketAddr, TcpStream},
     os::unix::ffi::OsStrExt,
     path::{Component, Path, PathBuf},
-    sync::{Arc, Mutex, atomic::Ordering},
+    sync::{Arc, Mutex},
     thread::sleep,
     time::Duration,
 };
@@ -517,6 +517,7 @@ impl NFSClientSession {
         &mut self,
         path: &AbsolutePath,
         open_options: OpenOptions,
+        seq_id: &mut u32,
     ) -> Result<OpenedFile, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
 
@@ -527,7 +528,7 @@ impl NFSClientSession {
         let open_owner_ref = self.open_owner.clone();
         let path_clone = path.clone().into_owned();
 
-        tracing::debug!("open: path = {}, seq_id = {:?}", path, open_owner_ref.seq_id);
+        tracing::debug!("open: path = {}, seq_id = {:?}", path, seq_id);
 
         if let Some(file_key_inner) = open_owner_ref.path_map.get(&path_clone)
             && let Some(file_open_state) = open_owner_ref.files.get(&file_key_inner)
@@ -538,7 +539,8 @@ impl NFSClientSession {
             return Ok(file_open_state.get_opened_file(share_access, 0, path_clone));
         }
 
-        let seq_id_val = open_owner_ref.seq_id.fetch_add(1, Ordering::SeqCst);
+        let seq_id_val = *seq_id;
+        *seq_id += 1;
 
         let open_args = Open4Args::with_open_options(self, filename, seq_id_val, open_options);
 
@@ -648,6 +650,7 @@ impl NFSClientSession {
     pub(crate) fn open_confirm(
         &mut self,
         opened_file: OpenedFile,
+        seq_id: &mut u32,
     ) -> Result<OpenedFile, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
@@ -658,12 +661,11 @@ impl NFSClientSession {
         tracing::debug!(
             "open_confirm: path = {}, seq_id = {:?}",
             opened_file.path,
-            open_owner_ref.seq_id
+            seq_id
         );
-        let seq_id_val = open_owner_ref.seq_id.fetch_add(1, Ordering::SeqCst);
-        
+        let seq_id_val = *seq_id;
+        *seq_id += 1;
 
-        
         let mut file_open_state = open_owner_ref.files.get_mut(&opened_file.file_key).ok_or(
             NFSCRSInnerError::InvalidArgument("open_confirm with no file open".to_string()),
         )?;
@@ -704,15 +706,10 @@ impl NFSClientSession {
 
     pub fn close(&mut self, opened_file: &mut OpenedFile) -> Result<(), NFSCRSError> {
         let open_owner_ref = self.open_owner.clone();
-        let _guard = open_owner_ref
-            .lock_path(&opened_file.path)
-            .map_err(|e| NFSCRSInnerError::PoisonedMutex(format!("{:?}", e)))?;
-        
-        tracing::debug!(
-            "close: path = {}, seq_id = {:?}",
-            opened_file.path,
-            open_owner_ref.seq_id
-        );
+        let mut seq_id_and_path_guard = open_owner_ref.lock_seq_id_and_path(&opened_file.path)?;
+        let seq_id = &mut *seq_id_and_path_guard.seq_id_guard;
+
+        tracing::debug!("close: path = {}, seq_id = {:?}", opened_file.path, seq_id);
 
         let state_id: StateId4;
         let needs_close: bool;
@@ -743,7 +740,8 @@ impl NFSClientSession {
         } // release file_open_state_entry
 
         if needs_close {
-            let seq_id_val = self.open_owner.seq_id.fetch_add(1, Ordering::SeqCst);
+            let seq_id_val = *seq_id;
+            *seq_id += 1;
 
             let mut cops = NFS4CompoundProcedure::new();
             cops.add_operation(NFSArgOp4::OP_PUTFH(PutFH4Args {
