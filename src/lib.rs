@@ -391,6 +391,16 @@ pub fn read_compound_result<T: AsRef<[u8]>, P: AsRef<[u8]>>(
 }
 
 impl NFSClientSession {
+    pub(crate) fn send_ops_and_get_result_wrapper(
+        &self,
+        cops: &NFS4CompoundProcedure,
+    ) -> Result<Compound4Result, NFSCRSError> {
+        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
+            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+        })?;
+
+        transport_guard.send_ops_and_get_result(cops)
+    }
     pub fn read_dir(&mut self) {}
     pub fn lookup(&mut self, _path: &str) {}
     pub fn get_current_fh(&mut self) {}
@@ -402,11 +412,14 @@ impl NFSClientSession {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, path)?;
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args::new(attr_list)));
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
+        let result = {
+            let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
+                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+            })?;
 
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+            let result = transport_guard.send_ops_and_get_result(&cops)?;
+            result
+        };
 
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
@@ -421,11 +434,14 @@ impl NFSClientSession {
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
 
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
+        let result = {
+            let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
+                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
+            })?;
 
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+            let result = transport_guard.send_ops_and_get_result(&cops)?;
+            result
+        };
 
         if !result.is_status_ok() {
             return Err(NFSCRSError::ReplyDenied("status is not ok".to_owned()));
@@ -474,11 +490,8 @@ impl NFSClientSession {
             push_lookup_ops(&mut cops, path)?;
             cops.add_operation(NFSArgOp4::OP_READDIR(readdir_args));
 
-            let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-            })?;
+            let mut result = self.send_ops_and_get_result_wrapper(&cops)?;
 
-            let mut result = transport_guard.send_ops_and_get_result(&cops)?;
             if !result.is_status_ok() {
                 return Err(NFSCRSError::OperationError("readdir failed!".to_owned()));
             }
@@ -555,11 +568,7 @@ impl NFSClientSession {
             ]),
         }));
         cops.add_operation(NFSArgOp4::OP_GETFH);
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
-
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -678,12 +687,7 @@ impl NFSClientSession {
         };
 
         cops.add_operation(NFSArgOp4::OP_OPEN_CONFIRM(open_confirm_args));
-
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
-
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -752,11 +756,7 @@ impl NFSClientSession {
                 open_state_id: state_id,
             }));
 
-            let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-                NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-            })?;
-
-            let result = match transport_guard.send_ops_and_get_result(&cops) {
+            let result = match self.send_ops_and_get_result_wrapper(&cops) {
                 Ok(res) => res,
                 Err(e) => {
                     if let Some(entry) = open_owner_ref.files.get_mut(&opened_file.file_key) {
@@ -812,11 +812,8 @@ impl NFSClientSession {
             offset: opened_file.offset as Offset4,
             count: count as Count4,
         }));
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
 
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
 
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
@@ -859,11 +856,7 @@ impl NFSClientSession {
             stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
         }));
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
-
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -917,11 +910,7 @@ impl NFSClientSession {
             obj_attributes: fattr4.clone(),
         };
         cops.add_operation(NFSArgOp4::OP_SETATTR(set_attr_op));
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
-
-        let mut result = transport_guard.send_ops_and_get_result(&cops)?;
+        let mut result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -941,11 +930,7 @@ impl NFSClientSession {
     fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
-
-        let mut result = transport_guard.send_ops_and_get_result(&cops)?;
+        let mut result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -969,11 +954,8 @@ impl NFSClientSession {
     ) -> Result<AbsolutePath<'static>, NFSCRSError> {
         let mut cops = NFS4CompoundProcedure::new();
         push_lookup_ops(&mut cops, &path)?;
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
 
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
         let prev_len = cops.argarray.len();
         let succ_len = if result.is_status_ok() {
             prev_len
@@ -1107,11 +1089,8 @@ impl NFSClientSession {
             }
         }
 
-        let mut transport_guard = self.nfs_transport.lock().map_err(|e| {
-            NFSCRSInnerError::PoisonedMutex(format!("failed to lock stream: {:?}", e))
-        })?;
+        let result = self.send_ops_and_get_result_wrapper(&cops)?;
 
-        let result = transport_guard.send_ops_and_get_result(&cops)?;
         if result.is_status_ok() {
             Ok(())
         } else {
