@@ -25,8 +25,8 @@ use crate::{
         GetAttr4Args, GetAttr4Result, GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4,
         NFSClientId4, NFSResultOp4, NFSStat4, Open4Args, Open4Result, OpenConfirm4Args,
         OpenConfirm4Result, PutFH4Args, Read4Args, Read4Result, ReadDir4Args, ReadDir4Result,
-        Renew4Args, SetAttr4Args, SetClientId4Args, SetClientId4Result, SetClientIdConfirm4Args,
-        StateId4, Verifier4, Write4Args, Write4Result,
+        Remove4Args, Renew4Args, SetAttr4Args, SetClientId4Args, SetClientId4Result,
+        SetClientIdConfirm4Args, StateId4, Verifier4, Write4Args, Write4Result,
     },
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::ONCRPCMessageReader,
@@ -1096,6 +1096,24 @@ impl NFSClientSession {
         } else {
             Err(NFSCRSError::NFSStatError(result.status))
         }
+    }
+
+    pub fn remove(&mut self, path: &AbsolutePath) -> Result<(), NFSCRSError> {
+        let name = path.file_name().ok_or(NFSCRSInnerError::InvalidArgument(
+            "cannot remove file system root".to_string(),
+        ))?;
+
+        let parent = path.parent().ok_or(NFSCRSInnerError::InvalidArgument(
+            "cannot remove file system root".to_string(),
+        ))?;
+
+        let mut cops = NFS4CompoundProcedure::new();
+        // push_lookup_ops(&mut cops, (&parent).as_ref())?;
+        cops.add_operation(NFSArgOp4::OP_REMOVE(Remove4Args {
+            target: ByteBuf::from(name.as_bytes()),
+        }));
+
+        todo!()
     }
 }
 

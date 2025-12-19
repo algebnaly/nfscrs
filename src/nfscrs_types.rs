@@ -105,7 +105,6 @@ impl<'a> Deref for AbsolutePath<'a> {
 
 impl<'a> AsRef<Path> for AbsolutePath<'a> {
     fn as_ref(&self) -> &Path {
-        // self.deref() 也可以，因为你实现了 Deref
         self.0.as_ref()
     }
 }

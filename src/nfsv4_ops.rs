@@ -48,7 +48,7 @@ pub enum NFSArgOp4 {
     OP_READ(Read4Args),                              //READ4args opread;
     OP_READDIR(ReadDir4Args),                        //READDIR4args opreaddir;
     OP_READLINK,                                     //void;
-    OP_REMOVE,                                       //REMOVE4args opremove;
+    OP_REMOVE(Remove4Args),                                     //REMOVE4args opremove;
     OP_RENAME,                                       //RENAME4args oprename;
     OP_RENEW(Renew4Args),                            //RENEW4args oprenew;
     OP_RESTOREFH,                                    //void;
@@ -851,6 +851,23 @@ pub struct Renew4Args {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Renew4Result{
-    pub status: NFSStat4
+pub struct Renew4Result {
+    pub status: NFSStat4,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Remove4Args {
+    pub target: Component4,
+}
+
+#[derive(Debug, Deserialize)]
+struct Remove4ResultOk {
+    pub cinfo: ChangeInfo4,
+}
+
+#[derive(Debug, XDREnumDeserialize)]
+pub enum Remove4Result {
+    NFS4_OK(Remove4ResultOk),
+    #[default_arm]
+    Default(u32),
 }
