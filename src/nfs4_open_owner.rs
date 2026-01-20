@@ -2,9 +2,7 @@ use std::{
     fmt::Formatter,
     hash::{DefaultHasher, Hash, Hasher},
     iter,
-    sync::{
-        Mutex, MutexGuard,
-    },
+    sync::{Mutex, MutexGuard},
 };
 
 use dashmap::DashMap;

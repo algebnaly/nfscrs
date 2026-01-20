@@ -18,9 +18,7 @@ fn main() {
     let open_opt = OpenOptions::new().create(true).write(true).truncate(true);
 
     let abs_path = &format!("{}", args[2]).try_into().unwrap();
-    let mut opened_file = session
-        .open_file(&abs_path, open_opt)
-        .unwrap();
+    let mut opened_file = session.open_file(&abs_path, open_opt).unwrap();
     let mut f = std::fs::OpenOptions::new()
         .read(true)
         .open(format!("{}", args[1]))
@@ -28,12 +26,9 @@ fn main() {
 
     let mut fattr_builder = FAttr4Builder::new();
     fattr_builder.set_file_size(0);
-    
+
     session
-        .set_file_attr(
-            abs_path,
-            fattr_builder.build(),
-        )
+        .set_file_attr(abs_path, fattr_builder.build())
         .unwrap();
     let mut buf: [u8; 1024] = [0; 1024];
     loop {

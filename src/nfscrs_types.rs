@@ -26,6 +26,10 @@ impl<'a> AbsolutePath<'a> {
     pub fn is_root(&self) -> bool {
         self.0.components().all(|c| matches!(c, Component::RootDir))
     }
+
+    pub fn parent_absolute(&'a self) -> Option<AbsolutePath<'a>> {
+        self.0.parent().map(|p| AbsolutePath(Cow::Borrowed(p)))
+    }
 }
 
 impl<'a> TryFrom<&'a Path> for AbsolutePath<'a> {

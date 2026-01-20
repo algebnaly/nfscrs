@@ -8,8 +8,7 @@ use crate::{
     nfs4_types::{Count4, FSId4, NFSFH4},
     nfscrs_types::{AbsolutePath, AbsolutePathOwned},
     nfsv4_ops::{
-        GetFH4ResultOk, Open4ResultOk, Read4ResultOk, StableHow4, StateId4,
-        Verifier4, open_params,
+        GetFH4ResultOk, Open4ResultOk, Read4ResultOk, StableHow4, StateId4, Verifier4, open_params,
     },
     xdr_types::Opaque,
 };
@@ -85,7 +84,7 @@ impl OpenOptions {
         self.truncate = truncate;
         self
     }
-    
+
     pub fn get_share_access(&self) -> u32 {
         let share_access = if self.read && !self.write {
             open_params::OPEN4_SHARE_ACCESS_READ
@@ -145,7 +144,7 @@ impl OpenFileState {
         state_id: StateId4,
         share_access: u32,
         share_deny: u32,
-        rflags: u32
+        rflags: u32,
     ) -> Self {
         let confirmed = rflags & crate::nfs4_open::OPEN4_RESULT_CONFIRM == 0;
         Self {
