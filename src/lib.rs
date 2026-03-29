@@ -795,6 +795,7 @@ impl NFSClientSession {
     pub fn read(
         &mut self,
         opened_file: &mut OpenedFile,
+        offset: usize,
         count: usize,
     ) -> Result<ReadResult, NFSCRSError> {
         let open_owner_ref = self.open_owner.clone();
@@ -810,7 +811,7 @@ impl NFSClientSession {
         }));
         cops.add_operation(NFSArgOp4::OP_READ(Read4Args {
             state_id: state_id,
-            offset: opened_file.offset as Offset4,
+            offset: offset as Offset4,
             count: count as Count4,
         }));
 
@@ -828,15 +829,13 @@ impl NFSClientSession {
             );
         };
 
-        let read_count = read_result_ok.data.len();
-        opened_file.offset += read_count;
-
         Ok(read_result_ok.into())
     }
 
     pub fn write(
         &mut self,
         opened_file: &mut OpenedFile,
+        offset: usize,
         data: &[u8],
     ) -> Result<WriteResult, NFSCRSError> {
         let open_owner_ref = self.open_owner.clone();
@@ -853,7 +852,7 @@ impl NFSClientSession {
 
         cops.add_operation(NFSArgOp4::OP_WRITE(Write4Args {
             state_id: state_id,
-            offset: opened_file.offset as u64,
+            offset: offset as Offset4,
             stable: nfsv4_ops::StableHow4::UNSTABLE4,
             data: Opaque::from(data),
         }));
@@ -870,7 +869,6 @@ impl NFSClientSession {
             );
         };
 
-        opened_file.offset += write_result_ok.count as usize;
         Ok(WriteResult {
             count: write_result_ok.count,
             committed: write_result_ok.committed,

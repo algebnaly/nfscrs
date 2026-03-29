@@ -31,11 +31,13 @@ fn main() {
         .set_file_attr(abs_path, fattr_builder.build())
         .unwrap();
     let mut buf: [u8; 1024] = [0; 1024];
+    let mut offset = 0;
     loop {
         let count = f.read(&mut buf).unwrap();
         if count == 0 {
             break;
         }
-        session.write(&mut opened_file, &buf[..count]).unwrap();
+        session.write(&mut opened_file, offset, &buf[..count]).unwrap();
+        offset += count as usize;
     }
 }

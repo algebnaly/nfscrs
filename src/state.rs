@@ -31,7 +31,6 @@ impl OpenedFileBuilder {
             requested_share_access: self.requested_share_access,
             requested_share_deny: self.requested_share_deny,
             path: self.path,
-            offset: 0,
         })
     }
 }
@@ -42,7 +41,6 @@ pub struct OpenedFile {
     pub file_key: FileKey,
     pub requested_share_access: u32,
     pub requested_share_deny: u32,
-    pub offset: usize,
     pub path: AbsolutePathOwned,
 }
 
@@ -201,7 +199,6 @@ impl OpenFileState {
             file_key: self.file_key,
             requested_share_access,
             requested_share_deny,
-            offset: 0,
             path,
         }
     }

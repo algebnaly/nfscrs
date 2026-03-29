@@ -13,12 +13,14 @@ fn main() {
         .open_file(&"/note.md".try_into().unwrap(), open_opt)
         .unwrap();
     let mut buf: Vec<u8> = Vec::new();
+    let mut offset = 0;
     loop {
-        let read_result = session.read(&mut opened_file, 1024).unwrap();
+        let read_result = session.read(&mut opened_file, offset, 1024).unwrap();
         buf.extend(read_result.data.iter());
         if read_result.eof {
             break;
         }
+        offset += read_result.data.len();
     }
     std::io::stdout().write(&buf).unwrap();
 }
