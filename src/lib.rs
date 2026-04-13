@@ -345,10 +345,16 @@ impl NFSClientBuilder {
             loop {
                 sleep(Duration::from_secs((lease_time / 2) as u64));
                 {
-                    let mut nfs_transport_guard = nfs_transport_ref
-                        .lock()
-                        .expect("failed to aquire nfs transport");
-                    renew_operation(client_id, &mut *nfs_transport_guard).expect("failed to renew");
+                    let mut nfs_transport_guard = match nfs_transport_ref.lock() {
+                        Ok(g) => g,
+                        Err(e) => {
+                            tracing::warn!("{e:?}");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = renew_operation(client_id, &mut *nfs_transport_guard) {
+                        tracing::warn!("{e:?}");
+                    }
                 }
             }
         });
