@@ -52,6 +52,7 @@ mod oncrpc_msg;
 mod simple_api;
 mod state;
 mod xdr_types;
+mod client;
 
 pub use state::*;
 
@@ -224,6 +225,7 @@ impl NFSClientBuilder {
             }
         }
     }
+    
     fn get_onc_rpc_compound_call_message<P: AsRef<[u8]>>(
         &mut self,
         payload: P,
