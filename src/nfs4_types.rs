@@ -1,5 +1,4 @@
-use serde::{Deserialize, Serialize};
-use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
+use binserde::{Decode, Encode};
 
 use crate::xdr_types::Opaque;
 
@@ -11,7 +10,7 @@ pub type Count4 = u32;
 pub type Length4 = u64;
 pub type Mode4 = u32;
 pub type NFSCookie4 = u64;
-pub type NFSFH4 = serde_bytes::ByteBuf; // with max size NFS4_FHSIZE
+pub type NFSFH4 = binserde::ByteBuf; // with max size NFS4_FHSIZE
 pub type NFSLease4 = u32;
 pub type Offset4 = u64;
 pub type QOP4 = u32;
@@ -28,19 +27,19 @@ pub type AsciiRequired4 = Utf8String;
 pub type NfsLockId4 = u64;
 pub type PathName4 = Vec<Component4>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct SpecData4 {
     pub spec_data_1: u32, /* major device number */
     pub spec_data_2: u32, /* minor device number */
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, Encode, Decode, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FSId4 {
     pub major: u64,
     pub minor: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct NFSTime4 {
     pub seconds: i64,
     pub nseconds: u32,
@@ -51,15 +50,15 @@ pub mod time_how4 {
     pub const SET_TO_CLIENT_TIME4: u32 = 1;
 }
 
-#[derive(Debug, XDREnumSerialize, XDREnumDeserialize)]
+#[derive(Debug, Encode, Decode)]
 #[repr(u32)]
 pub enum SetTime4 {
     SET_TO_CLIENT_TIME4(NFSTime4) = time_how4::SET_TO_CLIENT_TIME4,
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, XDREnumSerialize, XDREnumDeserialize)]
+#[derive(Debug, Encode, Decode)]
 #[repr(u32)]
 pub enum NFSFType4 {
     NF4REG = 1,       /* Regular File */
@@ -73,13 +72,13 @@ pub enum NFSFType4 {
     NF4NAMEDATTR = 9, /* Named Attribute */
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct FSLocation4 {
     pub server: Utf8StrCis,
     pub rootpath: PathName4,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct FSLocations4 {
     pub fs_root: PathName4,
     pub fs_locations: Vec<FSLocation4>,
@@ -89,7 +88,7 @@ pub type AceType4 = u32;
 pub type AceFlag4 = u32;
 pub type AceMask4 = u32;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct NFSAce4 {
     pub type_field: AceType4,
     pub flag: AceFlag4,

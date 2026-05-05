@@ -18,7 +18,7 @@ impl ClientOwner4 {
         let mut rng = rand::rng();
         Self {
             co_verifier: rng.random(),
-            co_ownerid
+            co_ownerid,
         }
     }
 }

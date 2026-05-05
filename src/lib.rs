@@ -33,10 +33,11 @@ use crate::{
     oncrpc_msg::ONCRPCMessageReader,
     xdr_types::Opaque,
 };
+use binserde::ByteBuf;
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
-use serde_bytes::ByteBuf;
 
 mod auth;
+mod client;
 mod constants;
 pub mod fattr4;
 pub mod fattr4_utils;
@@ -52,7 +53,6 @@ mod oncrpc_msg;
 mod simple_api;
 mod state;
 mod xdr_types;
-mod client;
 
 pub use state::*;
 
@@ -225,7 +225,7 @@ impl NFSClientBuilder {
             }
         }
     }
-    
+
     fn get_onc_rpc_compound_call_message<P: AsRef<[u8]>>(
         &mut self,
         payload: P,
@@ -396,7 +396,7 @@ pub fn read_compound_result<T: AsRef<[u8]>, P: AsRef<[u8]>>(
     reply_message: &RpcMessage<T, P>,
 ) -> Result<Compound4Result, NFSCRSInnerError> {
     let reply_message = read_reply_body(reply_message)?;
-    xdr_brk::from_bytes(reply_message.as_ref()).map_err(NFSCRSInnerError::from)
+    binserde_xdr::from_bytes(reply_message.as_ref()).map_err(NFSCRSInnerError::from)
 }
 
 impl NFSClientSession {

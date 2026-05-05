@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
-use xdr_brk::from_bytes;
+use binserde::{ByteBuf, Decode, Encode};
+use binserde_xdr::from_bytes;
 
 use crate::{
     NFSCRSInnerError,
@@ -11,8 +10,6 @@ use crate::{
     },
     nfsv4_ops::NFSStat4,
 };
-
-use xdr_brk::deserialize_len;
 
 // here, we use `X-Macro` pattern to reduce repetition
 macro_rules! for_each_fattr4 {
@@ -134,7 +131,7 @@ pub mod fattr4_names {
 }
 
 // generate match case code here
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Encode, Decode, Clone)]
 pub struct FAttr4 {
     pub attr_mask: BitMap4,
     pub attr_vals: AttrList4,
@@ -163,7 +160,7 @@ impl FAttr4 {
         bit_nums: &[usize],
     ) -> Result<Vec<Vec<u8>>, NFSCRSInnerError> {
         let mut attr_val_list: Vec<Vec<u8>> = Vec::new();
-        let mut remaining_bytes = self.attr_vals.as_slice();
+        let mut remaining_bytes = self.attr_vals.as_ref();
 
         for attr_index in bit_nums {
             let attr_len = fetch_fattr4_item_size(attr_index.clone(), remaining_bytes)?;
@@ -196,7 +193,7 @@ impl FAttr4 {
             )));
         }
 
-        let mut remaining_bytes = self.attr_vals.as_slice();
+        let mut remaining_bytes = self.attr_vals.as_ref();
 
         for attr_index in attr_list {
             let attr_len = fetch_fattr4_item_size(attr_index, remaining_bytes)?;

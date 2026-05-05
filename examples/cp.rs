@@ -37,7 +37,9 @@ fn main() {
         if count == 0 {
             break;
         }
-        session.write(&mut opened_file, offset, &buf[..count]).unwrap();
+        session
+            .write(&mut opened_file, offset, &buf[..count])
+            .unwrap();
         offset += count as usize;
     }
 }

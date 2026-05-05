@@ -1,1 +1,1 @@
-pub type Opaque = serde_bytes::ByteBuf;
+pub type Opaque = binserde::ByteBuf;

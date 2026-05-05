@@ -1,6 +1,6 @@
+use binserde::ByteBuf;
+use binserde::{ByteArray, Decode, Encode};
 use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
-use xdr_brk::{XDREnumDeserialize, XDREnumSerialize};
 
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
@@ -63,7 +63,7 @@ pub enum NFSArgOp4 {
     OP_ILLEGAL = 10044,                              //void;// well, this is actually 10044
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub enum NFSResultOp4 {
     _PlaceHolder0,
     _PlaceHolder1,
@@ -109,7 +109,7 @@ pub enum NFSResultOp4 {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, XDREnumDeserialize)]
+#[derive(Debug, Clone, Decode)]
 pub enum NFSStat4 {
     NFS4_OK = 0,                         /*                0 everything is okay       */
     NFS4ERR_PERM = 1,                    /*           1 caller not privileged    */
@@ -180,7 +180,7 @@ pub enum NFSStat4 {
     NFS4ERR_CB_PATH_DOWN = 10048,        /*10048  callback path down       */
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Compound4Result {
     pub status: NFSStat4,
     pub tag: String,
@@ -210,39 +210,40 @@ impl GetAttr4Args {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub struct GetAttr4ResultOk {
     pub obj_attributes: FAttr4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum GetAttr4Result {
     NFS4_OK(GetAttr4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
 pub const NFS4_VERIFIER_SIZE: usize = 8;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
+#[derive(Debug, Encode, Decode, PartialEq, Default, Clone)]
 pub struct Verifier4 {
-    #[serde(with = "xdr_brk::fixed_length_bytes")]
-    pub verifier4: [u8; NFS4_VERIFIER_SIZE],
+    pub verifier4: ByteArray<NFS4_VERIFIER_SIZE>,
 }
 
 impl Verifier4 {
     pub const fn zero() -> Self {
         Self {
-            verifier4: [0; NFS4_VERIFIER_SIZE],
+            verifier4: ByteArray::zero(),
         }
     }
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum SetClientId4Result {
     NFS4_OK(SetClientIdResultOK),
     NFS4ERR_CLID_INUSE(ClientAddr4), //this has to be fix!
-    #[default_arm]
+    #[binserde(catch_all)]
     DefaultArm(u32), // we need to handle default arm in the result,
                                      //this will be done in xdr_brk_enum crate, which provides a attribute macro to do this.
 }
@@ -358,18 +359,18 @@ impl Default for NFS4CompoundProcedure {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct SetClientIdConfirm4Args {
     pub client_id: ClientId4,
     pub setclientid_confirm: Verifier4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct SetClientIdConfirm4Result {
     pub status: NFSStat4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct PutRootFH4Result {
     /* CURRENT_FH: root fh */
     pub status: NFSStat4,
@@ -399,7 +400,7 @@ impl ReadDir4Args {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Encode, Decode, Clone)]
 pub struct Entry4 {
     pub cookie: NFSCookie4,
     pub name: Component4,
@@ -407,13 +408,13 @@ pub struct Entry4 {
     pub next_entry: Option<Box<Entry4>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Encode, Decode, Clone)]
 pub struct DirList4 {
     pub entries: Option<Box<Entry4>>,
     pub eof: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Encode, Decode, Clone)]
 pub struct ReadDir4ResultOk {
     pub cookie_verf: Verifier4,
     pub reply: DirList4,
@@ -437,14 +438,14 @@ impl ReadDir4ResultOk {
 }
 
 #[repr(u32)]
-#[derive(Debug, XDREnumDeserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub enum ReadDir4Result {
     NFS4_OK(ReadDir4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     DefautlArm(u32),
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub struct LookUp4Args {
     /* CURRENT_FH: directory */
     objname: Component4,
@@ -456,7 +457,7 @@ impl LookUp4Args {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub struct LookUp4Result {
     status: NFSStat4,
 }
@@ -598,21 +599,20 @@ pub struct OpenClaimDelegateCur4 {
     pub file: Component4,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Encode, Decode, Clone)]
 pub struct StateId4 {
     pub seq_id: u32,
-    #[serde(with = "xdr_brk::fixed_length_bytes")]
-    pub other: [u8; NFS4_OTHER_SIZE],
+    pub other: ByteArray<NFS4_OTHER_SIZE>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub struct OpenReadDelegation4 {
     pub state_id: StateId4,   /* Stateid for delegation */
     pub recall: bool, /* Pre-recalled flag for delegations obtained by reclaim (CLAIM_PREVIOUS) */
     pub permissions: NFSAce4, /* Defines users who don't need an ACCESS call to open for read */
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub struct OpenWriteDelegation4 {
     pub state_id: StateId4, /* Stateid for delegation */
     pub recall: bool,       /* Pre-recalled flag for
@@ -631,13 +631,13 @@ pub struct OpenWriteDelegation4 {
                               open */
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub struct NFSModifiedLimit4 {
     pub num_blocks: u32,
     pub bytes_per_block: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub enum NFSSpaceLimit4 {
     /* limit specified as file size */
     NFS_LIMIT_SIZE(u64),
@@ -645,7 +645,7 @@ pub enum NFSSpaceLimit4 {
     NFS_LIMIT_BLOCKS(NFSModifiedLimit4),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub struct NFSAce4 {
     r#type: AceType4,
     flag: AceFlag4,
@@ -653,21 +653,22 @@ pub struct NFSAce4 {
     who: Utf8StrMixed,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Decode)]
 pub enum OpenDelegation4 {
     OPEN_DELEGATE_NONE,
     OPEN_DELEGATE_READ(OpenReadDelegation4),
     OPEN_DELEGATE_WRITE(OpenWriteDelegation4),
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Open4Result {
     NFS4_OK(Open4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub struct Open4ResultOk {
     pub state_id: StateId4,          /* Stateid for open */
     pub cinfo: ChangeInfo4,          /* Directory change info */
@@ -676,82 +677,84 @@ pub struct Open4ResultOk {
     pub delegation: OpenDelegation4, /* Info on any open delegation */
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub struct ChangeInfo4 {
     pub atomic: bool,
     pub before: ChangeId4,
     pub after: ChangeId4,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Decode, Clone)]
 pub struct GetFH4ResultOk {
     pub object: NFSFH4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub enum GetFH4Result {
     NFS4_OK(GetFH4ResultOk),
     Default,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Read4Args {
     pub state_id: StateId4,
     pub offset: Offset4,
     pub count: Count4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Read4ResultOk {
     pub eof: bool,
     pub data: Opaque,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Read4Result {
     NFS4_OK(Read4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct PutFH4Args {
     pub object: NFSFH4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct PutFH4Result {
     /* CURRENT_FH: */
     pub status: NFSStat4,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct OpenConfirm4Args {
     /* CURRENT_FH: opened file */
     pub open_stateid: StateId4,
     pub seq_id: SeqId4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct OpenConfirm4ResultOk {
     pub open_stateid: StateId4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum OpenConfirm4Result {
     NFS4_OK(OpenConfirm4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub enum StableHow4 {
     UNSTABLE4 = 0,
     DATA_SYNC4 = 1,
     FILE_SYNC4 = 2,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Write4Args {
     /* CURRENT_FH: file */
     pub state_id: StateId4,
@@ -760,17 +763,18 @@ pub struct Write4Args {
     pub data: Opaque,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Write4ResultOk {
     pub count: Count4,
     pub committed: StableHow4,
     pub writeverf: Verifier4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Write4Result {
     NFS4_OK(Write4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
@@ -787,7 +791,7 @@ mod nfs_ftype4 {
 }
 
 #[repr(u32)]
-#[derive(Debug, XDREnumSerialize)]
+#[derive(Debug, Decode)]
 pub enum CreateType4 {
     NF4LNK(LinkText4) = nfs_ftype4::NF4LNK,
     NF4BLK(SpecData4) = nfs_ftype4::NF4BLK,
@@ -798,76 +802,79 @@ pub enum CreateType4 {
     Default = nfs_ftype4::NF4ATTRDIR,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Create4Args {
     pub obj_type: CreateType4,
     pub obj_name: Component4,
     pub create_attrs: FAttr4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Create4Result {
     NFS4_OK(Create4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Create4ResultOk {
     pub cinfo: ChangeInfo4,
     pub attr_set: BitMap4, /* attributes set */
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct SetAttr4Args {
     /* CURRENT_FH: target object */
     pub state_id: StateId4,
     pub obj_attributes: FAttr4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct SetAttr4Result {
     pub status: NFSStat4,
     pub attrs_set: BitMap4,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Close4Args {
     /* CURRENT_FH: object */
     pub seq_id: SeqId4,
     pub open_state_id: StateId4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Close4Result {
     NFS4_OK(StateId4),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Renew4Args {
     pub client_id: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Renew4Result {
     pub status: NFSStat4,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct Remove4Args {
     pub target: Component4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct Remove4ResultOk {
     pub cinfo: ChangeInfo4,
 }
 
-#[derive(Debug, XDREnumDeserialize)]
+#[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum Remove4Result {
     NFS4_OK(Remove4ResultOk),
-    #[default_arm]
+    #[binserde(catch_all)]
     Default(u32),
 }

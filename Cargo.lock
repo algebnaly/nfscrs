@@ -3,6 +3,34 @@
 version = 4
 
 [[package]]
+name = "binserde"
+version = "0.1.0"
+dependencies = [
+ "binserde-core",
+ "binserde-derive",
+]
+
+[[package]]
+name = "binserde-core"
+version = "0.1.0"
+
+[[package]]
+name = "binserde-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "binserde_xdr"
+version = "0.1.0"
+dependencies = [
+ "binserde",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -83,14 +111,14 @@ dependencies = [
 name = "nfscrs"
 version = "0.2.0"
 dependencies = [
+ "binserde",
+ "binserde_xdr",
  "dashmap",
  "onc-rpc",
  "rand",
  "serde",
- "serde_bytes",
  "thiserror",
  "tracing",
- "xdr_brk",
 ]
 
 [[package]]
@@ -217,16 +245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_bytes"
-version = "0.11.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
-dependencies = [
- "serde",
- "serde_core",
-]
-
-[[package]]
 name = "serde_core"
 version = "1.0.226"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -349,28 +367,6 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
-
-[[package]]
-name = "xdr_brk"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "064b48dfe9b076f8f656b471b28a6fcb94258918dac0e4103adab2f72d322009"
-dependencies = [
- "serde",
- "xdr_brk_enum",
-]
-
-[[package]]
-name = "xdr_brk_enum"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "872672ee932da9901e3ea9e8ba2ceb93d34cd485e6ec56b1ca3ea17e44023492"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde",
- "syn",
-]
 
 [[package]]
 name = "zerocopy"
