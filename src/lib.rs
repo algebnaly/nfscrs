@@ -33,7 +33,7 @@ use crate::{
     oncrpc_msg::ONCRPCMessageReader,
     xdr_types::Opaque,
 };
-use binserde::ByteBuf;
+use minibserde::ByteBuf;
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
 
 mod auth;
@@ -396,7 +396,7 @@ pub fn read_compound_result<T: AsRef<[u8]>, P: AsRef<[u8]>>(
     reply_message: &RpcMessage<T, P>,
 ) -> Result<Compound4Result, NFSCRSInnerError> {
     let reply_message = read_reply_body(reply_message)?;
-    binserde_xdr::from_bytes(reply_message.as_ref()).map_err(NFSCRSInnerError::from)
+    minibserde_xdr::from_bytes(reply_message.as_ref()).map_err(NFSCRSInnerError::from)
 }
 
 impl NFSClientSession {

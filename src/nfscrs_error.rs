@@ -29,7 +29,7 @@ pub enum NFSCRSInnerError {
     #[error("invalied argument: {0}")]
     InvalidArgument(String),
     #[error("xdr serialization error: {0}")]
-    XDRSederError(#[from] xdr_brk::Error),
+    XDRSederError(#[from] minibserde_xdr::Error),
     #[error("wrong message type: {0}")]
     WrongMessageType(String),
     #[error("wrong operation reply type: {0}")]

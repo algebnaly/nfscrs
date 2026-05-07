@@ -1,6 +1,7 @@
-use binserde::ByteBuf;
-use binserde::{ByteArray, Decode, Encode};
-use serde::{Deserialize, Serialize};
+use minibserde::ByteBuf;
+use minibserde::{ByteArray, Decode, Encode};
+use rand::distr::{Distribution, StandardUniform};
+use rand::{Fill, Rng};
 
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
@@ -18,7 +19,7 @@ use crate::{
 pub const TAG: &str = "nfscrstag";
 
 #[repr(u32)]
-#[derive(Debug, XDREnumSerialize)]
+#[derive(Debug, Encode)]
 pub enum NFSArgOp4 {
     _PlaceHolder0,
     _PlaceHolder1,
@@ -193,7 +194,7 @@ impl Compound4Result {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Encode)]
 pub struct GetAttr4Args {
     /* CURRENT_FH: directory or file */
     pub attr_request: BitMap4,
@@ -219,7 +220,7 @@ pub struct GetAttr4ResultOk {
 #[repr(u32)]
 pub enum GetAttr4Result {
     NFS4_OK(GetAttr4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -238,17 +239,31 @@ impl Verifier4 {
     }
 }
 
+impl Fill for Verifier4 {
+    fn fill<R: Rng + ?Sized>(&mut self, rng: &mut R) {
+        rng.fill(self.verifier4.as_mut_slice());
+    }
+}
+
+impl Distribution<Verifier4> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Verifier4 {
+        let mut v = Verifier4::zero();
+        rng.fill(v.verifier4.as_mut_slice());
+        v
+    }
+}
+
 #[derive(Debug, Decode)]
 #[repr(u32)]
 pub enum SetClientId4Result {
     NFS4_OK(SetClientIdResultOK),
     NFS4ERR_CLID_INUSE(ClientAddr4), //this has to be fix!
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     DefaultArm(u32), // we need to handle default arm in the result,
                                      //this will be done in xdr_brk_enum crate, which provides a attribute macro to do this.
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct NFSClientId4 {
     pub verifier: Verifier4,
 
@@ -259,12 +274,12 @@ impl NFSClientId4 {
     pub fn new(verifier: Verifier4, id: Vec<u8>) -> Self {
         Self {
             verifier,
-            id: serde_bytes::ByteBuf::from(id),
+            id: ByteBuf::from(id),
         }
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct SetClientId4Args {
     pub client: NFSClientId4,
     pub callback: CallBackClient4,
@@ -290,7 +305,7 @@ impl SetClientId4Args {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct CallBackClient4 {
     pub cb_program: u32,
     pub cb_location: ClientAddr4,
@@ -306,7 +321,7 @@ impl CallBackClient4 {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode)]
 pub struct ClientAddr4 {
     /* see struct rpcb in RFC 1833 */
     pub r_netid: String, /* network id */
@@ -322,13 +337,13 @@ impl ClientAddr4 {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Decode)]
 pub struct SetClientIdResultOK {
     pub client_id: ClientId4,
     pub set_client_id_confirm: Verifier4,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct NFS4CompoundProcedure {
     pub tag: String,
     pub minorversion: u32,
@@ -349,7 +364,7 @@ impl NFS4CompoundProcedure {
         self.argarray.push(op);
     }
     pub fn to_bytes(&self) -> Result<Vec<u8>, NFSCRSInnerError> {
-        xdr_brk::to_bytes(&self).map_err(NFSCRSInnerError::from)
+        minibserde_xdr::to_bytes(&self).map_err(NFSCRSInnerError::from)
     }
 }
 
@@ -376,7 +391,7 @@ pub struct PutRootFH4Result {
     pub status: NFSStat4,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Encode)]
 pub struct ReadDir4Args {
     /* CURRENT_FH: directory */
     pub cookie: NFSCookie4,
@@ -441,7 +456,7 @@ impl ReadDir4ResultOk {
 #[derive(Debug, Decode, Clone)]
 pub enum ReadDir4Result {
     NFS4_OK(ReadDir4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     DefautlArm(u32),
 }
 
@@ -462,7 +477,7 @@ pub struct LookUp4Result {
     status: NFSStat4,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub struct Open4Args {
     pub seq_id: SeqId4,
     pub share_access: u32,
@@ -531,13 +546,13 @@ impl Open4Args {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub struct OpenOwner {
     pub client_id: ClientId4,
     pub owner: Opaque, // with length limit of NFS4_OPAQUE_LIMIT
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Encode)]
 #[repr(u32)]
 pub enum OpenFlag4 {
     OPEN4_NOCREATE,
@@ -545,14 +560,14 @@ pub enum OpenFlag4 {
     Default,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub enum CreateHow4 {
     UNCHECKED4(FAttr4),
     GUARDED4(FAttr4),
     EXCLUSIVE4(Verifier4),
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub enum OpenClaim4 {
     /*
      * No special rights to file.
@@ -586,14 +601,14 @@ pub enum OpenClaim4 {
     CLAIM_DELEGATE_PREV(Component4),
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub enum OpenDelegationType4 {
     OPEN_DELEGATE_NONE,
     OPEN_DELEGATE_READ,
     OPEN_DELEGATE_WRITE,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Encode, Clone)]
 pub struct OpenClaimDelegateCur4 {
     pub delegate_stateid: StateId4,
     pub file: Component4,
@@ -664,7 +679,7 @@ pub enum OpenDelegation4 {
 #[repr(u32)]
 pub enum Open4Result {
     NFS4_OK(Open4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -712,7 +727,7 @@ pub struct Read4ResultOk {
 #[repr(u32)]
 pub enum Read4Result {
     NFS4_OK(Read4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -743,7 +758,7 @@ pub struct OpenConfirm4ResultOk {
 #[repr(u32)]
 pub enum OpenConfirm4Result {
     NFS4_OK(OpenConfirm4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -774,7 +789,7 @@ pub struct Write4ResultOk {
 #[repr(u32)]
 pub enum Write4Result {
     NFS4_OK(Write4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -791,7 +806,7 @@ mod nfs_ftype4 {
 }
 
 #[repr(u32)]
-#[derive(Debug, Decode)]
+#[derive(Debug, Encode)]
 pub enum CreateType4 {
     NF4LNK(LinkText4) = nfs_ftype4::NF4LNK,
     NF4BLK(SpecData4) = nfs_ftype4::NF4BLK,
@@ -813,7 +828,7 @@ pub struct Create4Args {
 #[repr(u32)]
 pub enum Create4Result {
     NFS4_OK(Create4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -847,7 +862,7 @@ pub struct Close4Args {
 #[repr(u32)]
 pub enum Close4Result {
     NFS4_OK(StateId4),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 
@@ -875,6 +890,6 @@ pub struct Remove4ResultOk {
 #[repr(u32)]
 pub enum Remove4Result {
     NFS4_OK(Remove4ResultOk),
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }

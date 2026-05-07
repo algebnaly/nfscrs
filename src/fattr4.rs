@@ -1,5 +1,5 @@
-use binserde::{ByteBuf, Decode, Encode};
-use binserde_xdr::from_bytes;
+use minibserde::{ByteBuf, Decode, Encode};
+use minibserde_xdr::{decode_len, from_bytes};
 
 use crate::{
     NFSCRSInnerError,
@@ -102,11 +102,13 @@ macro_rules! define_fattr4_enum {
 
 macro_rules! define_fattr4_iterator {
     ($( ( $variant:ident, $type:ty, $discriminant:expr ) ),* $(,)?) => {
+        // for a given discriminant(index), what is the length for current data payload?
+        // this method is used to calculate the length of payload
         pub fn fetch_fattr4_item_size(index: usize, data: &[u8]) -> Result<usize, NFSCRSInnerError> {
             match index {
                 $(
                     $discriminant => {
-                        deserialize_len::<$type>(data).map_err(|e| NFSCRSInnerError::InvalidArgument(format!("Failed to deserialize {}: {}", stringify!($type), e)))
+                        decode_len::<$type>(data).map_err(|e| NFSCRSInnerError::InvalidArgument(format!("Failed to deserialize {}: {}", stringify!($type), e)))
                     }
                 )*
                 _ => Err(NFSCRSInnerError::InvalidArgument(format!("Invalid index: {}", index))),

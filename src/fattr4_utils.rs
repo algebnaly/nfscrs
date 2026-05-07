@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use serde_bytes::ByteBuf;
-use xdr_brk::from_bytes;
+use minibserde::ByteBuf;
+use minibserde_xdr::from_bytes;
 
 use crate::{
     NFSCRSInnerError, OpenOptions,

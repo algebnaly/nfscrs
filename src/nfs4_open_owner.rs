@@ -6,7 +6,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use serde_bytes::ByteBuf;
+use minibserde::ByteBuf;
 
 use crate::{
     FileKey, OpenFileState,

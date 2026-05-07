@@ -1,4 +1,4 @@
-use binserde::{Decode, Encode};
+use minibserde::{Decode, Encode};
 
 use crate::xdr_types::Opaque;
 
@@ -10,7 +10,7 @@ pub type Count4 = u32;
 pub type Length4 = u64;
 pub type Mode4 = u32;
 pub type NFSCookie4 = u64;
-pub type NFSFH4 = binserde::ByteBuf; // with max size NFS4_FHSIZE
+pub type NFSFH4 = minibserde::ByteBuf; // with max size NFS4_FHSIZE
 pub type NFSLease4 = u32;
 pub type Offset4 = u64;
 pub type QOP4 = u32;
@@ -54,7 +54,7 @@ pub mod time_how4 {
 #[repr(u32)]
 pub enum SetTime4 {
     SET_TO_CLIENT_TIME4(NFSTime4) = time_how4::SET_TO_CLIENT_TIME4,
-    #[binserde(catch_all)]
+    #[minibserde(catch_all)]
     Default(u32),
 }
 

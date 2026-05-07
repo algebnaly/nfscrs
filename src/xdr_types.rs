@@ -1,1 +1,1 @@
-pub type Opaque = binserde::ByteBuf;
+pub type Opaque = minibserde::ByteBuf;
