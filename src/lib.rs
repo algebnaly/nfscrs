@@ -41,6 +41,8 @@ mod client;
 mod constants;
 pub mod fattr4;
 pub mod fattr4_utils;
+mod nfs4_1_ops;
+mod nfs4_1_types;
 pub mod nfs4_open;
 pub mod nfs4_open_owner;
 pub mod nfs4_types;

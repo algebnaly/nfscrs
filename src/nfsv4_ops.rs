@@ -3,6 +3,7 @@ use minibserde::{ByteArray, Decode, Encode};
 use rand::distr::{Distribution, StandardUniform};
 use rand::{Fill, Rng};
 
+use crate::nfs4_1_ops::Exchange4Args;
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
     fattr4::FAttr4,
@@ -60,8 +61,27 @@ pub enum NFSArgOp4 {
     OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
     OP_VERIFY,                                       //VERIFY4args opverify;
     OP_WRITE(Write4Args),                            //WRITE4args opwrite;
-    OP_RELEASE_LOCKOWNER,                            //RELEASE_LOCKOWNER4args oprelease_lockowner;
-    OP_ILLEGAL = 10044,                              //void;// well, this is actually 10044
+    OP_RELEASE_LOCKOWNER, //RELEASE_LOCKOWNER4args, only avaliable in nfs 4.0
+    BACKCHANNEL_CTL,
+    BIND_CONN_TO_SESSION,
+    EXCHANGE_ID(Exchange4Args),
+    CREATE_SESSION,
+    DESTROY_SESSION,
+    FREE_STATEID,
+    GET_DIR_DELEGATION,
+    GETDEVICEINFO,
+    GETDEVICELIST,
+    LAYOUTCOMMIT,
+    LAYOUTGET,
+    LAYOUTRETURN,
+    SECINFO_NO_NAME,
+    SEQUENCE,
+    SET_SSV,
+    TEST_STATEID,
+    WANT_DELEGATION,
+    DESTROY_CLIENTID,
+    RECLAIM_COMPLETE,
+    OP_ILLEGAL = 10044, //void;// well, this is actually 10044
 }
 
 #[derive(Debug, Decode)]
@@ -354,7 +374,7 @@ impl NFS4CompoundProcedure {
     pub fn new() -> Self {
         Self {
             tag: TAG.to_owned(),
-            minorversion: 0,
+            minorversion: 1,
             argarray: Vec::new(),
         }
     }

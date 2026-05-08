@@ -1,9 +1,14 @@
+use minibserde::Encode;
 use rand::Rng;
 
 use crate::{nfsv4_ops::Verifier4, xdr_types::Opaque};
 
+#[derive(Debug, Encode)]
 pub struct ClientOwner4 {
     pub co_verifier: Verifier4,
+    // co_ownerid must be consistent across incarnations,
+    // since this library have no stable method to generate consistent co_ownerid,
+    // it is library user's reponsibility to provide consistent co_ownerid.
     pub co_ownerid: Opaque, // with size limit: NFS4_OPAQUE_LIMIT
 }
 
