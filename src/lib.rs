@@ -18,7 +18,10 @@ use crate::{
     constants::{READDIR_DEFAULT_ATTR, READDIR_MAX_COUNT},
     fattr4::{FAttr4, FAttr4Type, fattr4_names},
     fattr4_utils::bit_nums_to_attr_mask,
-    nfs4_1_ops::{Exchange4Args, ExchangeID4Result},
+    nfs4_1_ops::{
+        CreateSession4Args, CreateSession4Result, CreateSession4ResultOk, Exchange4Args,
+        ExchangeID4Result,
+    },
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_error::{NFSCRSError, NFSCRSInnerError},
     nfscrs_types::{AbsolutePath, DirEntry},
@@ -39,7 +42,6 @@ use minibserde::ByteBuf;
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
 
 mod auth;
-mod onc_rpc_defs;
 mod client;
 mod constants;
 pub mod fattr4;
@@ -54,6 +56,7 @@ pub mod nfscrs_error;
 pub mod nfscrs_types;
 mod nfsv4_ops;
 mod nfsv4_rpc_def;
+mod onc_rpc_defs;
 mod oncrpc_msg;
 mod simple_api;
 mod state;
@@ -263,13 +266,6 @@ impl NFSClientBuilder {
     }
     pub fn establish_session(mut self) -> Result<NFSClientSession, NFSCRSError> {
         let mut set_client_id_cops = NFS4CompoundProcedure::new();
-        let client_id = rand::random_iter().take(12).collect();
-        let set_client_arg = SetClientId4Args::build(
-            NFSClientId4::new(Verifier4::zero(), client_id),
-            CallBackClient4::dummy_callback(),
-            0,
-        )?;
-
         let eia = Exchange4Args {
             eia_clientowner: self.client_owner.clone(),
             eia_flags: 0,
@@ -290,19 +286,45 @@ impl NFSClientBuilder {
         }
 
         let client_id: ClientId4;
+        let sequence: u32;
         if let Some(NFSResultOp4::OP_EXCHANGE_ID(res)) = result.resarray.last()
             && let ExchangeID4Result::NFS4_OK(res_ok) = res
         {
-            client_id = res_ok.eir_clientid;
+            client_id = res_ok.eir_client_id;
+            sequence = res_ok.eir_sequence_id;
         } else {
             return Err(NFSCRSError::OperationError(format!(
                 "set_client_id operation failed: {result:?}",
             )));
         }
+
+        let create_session_arg = CreateSession4Args::new(client_id, sequence);
+
         let mut cops = NFS4CompoundProcedure::new();
-        let op_create_session = NFSArgOp4::CREATE_SESSION;
+        let op_create_session = NFSArgOp4::CREATE_SESSION(create_session_arg);
         cops.add_operation(op_create_session);
 
+        let payload = cops.to_bytes()?;
+        let cops_msg = self.get_onc_rpc_compound_call_message(payload);
+        self.send_msg(cops_msg, &mut stream)?;
+        let reply = self.read_reply(&mut stream)?;
+        let mut result = read_compound_result(&reply)?;
+        if !result.is_status_ok() {
+            return Err(NFSCRSError::NFSStatError(result.status));
+        }
+
+        let Some(NFSResultOp4::OP_CREATE_SESSION(CreateSession4Result::NFS4_OK(
+            create_session_result_ok,
+        ))) = result.resarray.pop()
+        else {
+            return Err(NFSCRSError::EmptyReplyBody);
+        };
+
+        // TODO: implement callback
+        let sequnce = create_session_result_ok.csr_sequence;
+        let session_id = create_session_result_ok.csr_sessionid;
+
+        let mut cops = NFS4CompoundProcedure::new();
         // operation to query lease time.
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args {

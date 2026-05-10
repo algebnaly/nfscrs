@@ -3,7 +3,9 @@ use minibserde::{ByteArray, Decode, Encode};
 use rand::distr::{Distribution, StandardUniform};
 use rand::{Fill, Rng};
 
-use crate::nfs4_1_ops::{Exchange4Args, ExchangeID4Result};
+use crate::nfs4_1_ops::{
+    CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result,
+};
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
     fattr4::FAttr4,
@@ -65,7 +67,7 @@ pub enum NFSArgOp4 {
     BACKCHANNEL_CTL,
     BIND_CONN_TO_SESSION,
     EXCHANGE_ID(Exchange4Args),
-    CREATE_SESSION,
+    CREATE_SESSION(CreateSession4Args),
     DESTROY_SESSION,
     FREE_STATEID,
     GET_DIR_DELEGATION,
@@ -129,7 +131,7 @@ pub enum NFSResultOp4 {
     OP_BACKCHANNEL_CTL,
     OP_BIND_CONN_TO_SESSION,
     OP_EXCHANGE_ID(ExchangeID4Result),
-    OP_CREATE_SESSION,
+    OP_CREATE_SESSION(CreateSession4Result),
     OP_DESTROY_SESSION,
     OP_FREE_STATEID,
     OP_GET_DIR_DELEGATION,

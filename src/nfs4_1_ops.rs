@@ -2,8 +2,12 @@ use minibserde::{Decode, Encode};
 
 use crate::{
     client::ClientOwner4,
-    nfs4_1_types::{CallbackSecParms4, Count4, GssHandle4, NfsImplId4, SecOId4, SequenceId4, ServerOwner4, SessionId4},
+    nfs4_1_types::{
+        CallbackSecParms4, Count4, GssHandle4, NfsImplId4, SecOId4, SequenceId4, ServerOwner4,
+        SessionId4,
+    },
     nfs4_types::{BitMap4, ClientId4},
+    onc_rpc_defs,
     xdr_types::Opaque,
 };
 
@@ -58,8 +62,8 @@ pub enum StateProtect4R {
 
 #[derive(Debug, Decode)]
 pub struct ExchangeID4ResultOk {
-    pub eir_clientid: ClientId4,
-    pub eir_sequenceid: SequenceId4,
+    pub eir_client_id: ClientId4,
+    pub eir_sequence_id: SequenceId4,
     pub eir_flags: u32,
     pub eir_state_protect: StateProtect4R,
     pub eir_server_owner: ServerOwner4,
@@ -75,7 +79,6 @@ pub enum ExchangeID4Result {
     Default(u32),
 }
 
-
 #[derive(Debug, Encode, Decode)]
 pub struct ChannelAttrs4 {
     pub ca_headerpadsize: Count4,
@@ -87,16 +90,43 @@ pub struct ChannelAttrs4 {
     pub ca_rdma_ird: Vec<u32>, // at most of length 1
 }
 
+impl Default for ChannelAttrs4 {
+    fn default() -> Self {
+        Self {
+            ca_headerpadsize: 4096,
+            ca_maxrequestsize: 64 * 1024 * 1024,
+            ca_maxresponsesize: 64 * 1024 * 1024,
+            ca_maxoperations: 1024,
+            ca_maxrequests: 1024,
+            ca_rdma_ird: Vec::new(),
+            ca_maxresponsesize_cached: 4096,
+        }
+    }
+}
 
 #[derive(Debug, Encode)]
 pub struct CreateSession4Args {
-    pub csa_clientid: ClientId4,
+    pub csa_client_id: ClientId4,
     pub csa_sequence: SequenceId4,
     pub csa_flags: u32,
     pub csa_fore_chan_attrs: ChannelAttrs4,
     pub csa_back_chan_attrs: ChannelAttrs4,
     pub csa_cb_program: u32,
     pub csa_sec_parms: Vec<CallbackSecParms4>,
+}
+
+impl CreateSession4Args {
+    pub fn new(client_id: ClientId4, sequence: u32) -> Self {
+        Self {
+            csa_client_id: client_id,
+            csa_sequence: sequence,
+            csa_flags: 0,
+            csa_fore_chan_attrs: ChannelAttrs4::default(),
+            csa_back_chan_attrs: ChannelAttrs4::default(),
+            csa_sec_parms: vec![CallbackSecParms4::AUTH_NONE],
+            csa_cb_program: 0,
+        }
+    }
 }
 
 #[derive(Debug, Decode)]

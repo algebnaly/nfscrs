@@ -53,7 +53,7 @@ pub type SessionId4 = ByteArray<NFS4_SESSIONID_SIZE>; // opaque sessionid4[NFS4_
 #[derive(Debug, Encode)]
 #[repr(u32)]
 pub enum CallbackSecParms4 {
-    AuthNone = crate::onc_rpc_defs::AUTH_NONE as u32, // AUTH_NONE
+    AUTH_NONE = crate::onc_rpc_defs::AUTH_NONE as u32, // AUTH_NONE
     AUTH_SYS = crate::onc_rpc_defs::AUTH_SYS as u32,
     RPCSEC_GSS = crate::onc_rpc_defs::RPCSEC_GSS as u32,
 }
