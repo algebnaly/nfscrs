@@ -14,9 +14,11 @@ use std::{
 
 use crate::{
     auth::AuthType,
+    client::ClientOwner4,
     constants::{READDIR_DEFAULT_ATTR, READDIR_MAX_COUNT},
     fattr4::{FAttr4, FAttr4Type, fattr4_names},
     fattr4_utils::bit_nums_to_attr_mask,
+    nfs4_1_ops::{Exchange4Args, ExchangeID4Result},
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_error::{NFSCRSError, NFSCRSInnerError},
     nfscrs_types::{AbsolutePath, DirEntry},
@@ -37,6 +39,7 @@ use minibserde::ByteBuf;
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
 
 mod auth;
+mod onc_rpc_defs;
 mod client;
 mod constants;
 pub mod fattr4;
@@ -64,6 +67,7 @@ pub struct NFSClientBuilder {
     auth: AuthType,
     msg_reader: ONCRPCMessageReader,
     remote_addr: SocketAddr,
+    client_owner: ClientOwner4,
 }
 
 #[derive(Debug)]
@@ -78,6 +82,7 @@ pub struct NFSClientSession {
     client_id: ClientId4,
     server_info: ServerInfo, // TODO: add a handler to backgroud renew thread
     open_owner: Arc<crate::nfs4_open_owner::OpenOwner>,
+    client_owner: ClientOwner4,
 }
 
 pub struct NFSTransport {
@@ -173,7 +178,7 @@ impl NFSTransport {
 }
 
 impl NFSClientBuilder {
-    pub fn new(uid: u32, gid: u32, remote_addr: SocketAddr) -> Self {
+    pub fn new(uid: u32, gid: u32, remote_addr: SocketAddr, co_ownerid: Vec<u8>) -> Self {
         Self {
             xid: Cell::new(rand::random()),
             auth: AuthType::AuthUnix(AuthUnixParams::new(
@@ -185,6 +190,7 @@ impl NFSClientBuilder {
             )),
             msg_reader: ONCRPCMessageReader::new(),
             remote_addr,
+            client_owner: ClientOwner4::with_co_ownerid(co_ownerid.into()),
         }
     }
     pub fn test_null_call(&mut self) -> Result<(), NFSCRSError> {
@@ -263,7 +269,15 @@ impl NFSClientBuilder {
             CallBackClient4::dummy_callback(),
             0,
         )?;
-        let op_set_client_id = NFSArgOp4::OP_SETCLIENTID(set_client_arg);
+
+        let eia = Exchange4Args {
+            eia_clientowner: self.client_owner.clone(),
+            eia_flags: 0,
+            eia_state_protect: nfs4_1_ops::StateProtect4A::SP4_NONE,
+            eia_client_impl_id: Vec::new(),
+        };
+
+        let op_set_client_id = NFSArgOp4::EXCHANGE_ID(eia);
         set_client_id_cops.add_operation(op_set_client_id);
         let payload = set_client_id_cops.to_bytes()?;
         let msg = self.get_onc_rpc_compound_call_message(payload);
@@ -276,25 +290,20 @@ impl NFSClientBuilder {
         }
 
         let client_id: ClientId4;
-        let set_client_id_confirm: Verifier4;
-        if let Some(NFSResultOp4::OP_SETCLIENTID(res)) = result.resarray.last()
-            && let SetClientId4Result::NFS4_OK(res_ok) = res
+        if let Some(NFSResultOp4::OP_EXCHANGE_ID(res)) = result.resarray.last()
+            && let ExchangeID4Result::NFS4_OK(res_ok) = res
         {
-            client_id = res_ok.client_id;
-            set_client_id_confirm = res_ok.set_client_id_confirm.clone();
+            client_id = res_ok.eir_clientid;
         } else {
             return Err(NFSCRSError::OperationError(format!(
                 "set_client_id operation failed: {result:?}",
             )));
         }
-        let set_client_id_confirm_args = SetClientIdConfirm4Args {
-            client_id,
-            setclientid_confirm: set_client_id_confirm,
-        };
         let mut cops = NFS4CompoundProcedure::new();
-        let op_set_client_id_confirm =
-            NFSArgOp4::OP_SETCLIENTID_CONFIRM(set_client_id_confirm_args);
-        cops.add_operation(op_set_client_id_confirm);
+        let op_create_session = NFSArgOp4::CREATE_SESSION;
+        cops.add_operation(op_create_session);
+
+        // operation to query lease time.
         cops.add_operation(NFSArgOp4::OP_PUTROOTFH);
         cops.add_operation(NFSArgOp4::OP_GETATTR(GetAttr4Args {
             attr_request: bit_nums_to_attr_mask(&[fattr4_names::FATTR4_LEASE_TIME]),
@@ -347,7 +356,7 @@ impl NFSClientBuilder {
 
         std::thread::spawn(move || {
             loop {
-                sleep(Duration::from_secs((lease_time / 2) as u64));
+                sleep(Duration::from_secs((lease_time / 2).max(1) as u64));
                 {
                     let mut nfs_transport_guard = match nfs_transport_ref.lock() {
                         Ok(g) => g,
@@ -371,10 +380,10 @@ impl NFSClientBuilder {
                 lease_time: lease_time as usize,
             },
             open_owner: Arc::new(crate::nfs4_open_owner::OpenOwner::new(ByteBuf::from(
-                b"simple_open",
+                b"simple_open", // TODO: maybe replace by process id or thread id
             ))),
+            client_owner: self.client_owner,
         };
-
         Ok(session)
     }
 }

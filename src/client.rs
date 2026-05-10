@@ -3,7 +3,7 @@ use rand::Rng;
 
 use crate::{nfsv4_ops::Verifier4, xdr_types::Opaque};
 
-#[derive(Debug, Encode)]
+#[derive(Debug, Encode, Clone)]
 pub struct ClientOwner4 {
     pub co_verifier: Verifier4,
     // co_ownerid must be consistent across incarnations,
@@ -13,13 +13,13 @@ pub struct ClientOwner4 {
 }
 
 impl ClientOwner4 {
-    fn new(co_verifier: Verifier4, co_ownerid: Opaque) -> Self {
+    pub fn new(co_verifier: Verifier4, co_ownerid: Opaque) -> Self {
         Self {
             co_verifier,
             co_ownerid,
         }
     }
-    fn with_co_ownerid(co_ownerid: Opaque) -> Self {
+    pub fn with_co_ownerid(co_ownerid: Opaque) -> Self {
         let mut rng = rand::rng();
         Self {
             co_verifier: rng.random(),

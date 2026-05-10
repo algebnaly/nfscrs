@@ -5,7 +5,12 @@ use std::env;
 use std::io::Read;
 
 fn main() {
-    let client_builder = NFSClientBuilder::new(1000, 1000, "127.0.0.1:2049".parse().unwrap());
+    let client_builder = NFSClientBuilder::new(
+        1000,
+        1000,
+        "127.0.0.1:2049".parse().unwrap(),
+        "dev".as_bytes().to_vec(),
+    );
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: {} <arg1> <arg2>", args[0]);

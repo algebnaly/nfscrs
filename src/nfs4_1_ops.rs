@@ -2,7 +2,7 @@ use minibserde::{Decode, Encode};
 
 use crate::{
     client::ClientOwner4,
-    nfs4_1_types::{GssHandle4, NfsImplId4, SecOId4, SequenceId4, ServerOwner4},
+    nfs4_1_types::{CallbackSecParms4, Count4, GssHandle4, NfsImplId4, SecOId4, SequenceId4, ServerOwner4, SessionId4},
     nfs4_types::{BitMap4, ClientId4},
     xdr_types::Opaque,
 };
@@ -32,10 +32,10 @@ pub enum StateProtect4A {
 
 #[derive(Debug, Encode)]
 pub struct Exchange4Args {
-    eia_clientowner: ClientOwner4,
-    eia_flags: u32,
-    eia_state_protect: StateProtect4A,
-    eia_client_impl_id: Vec<NfsImplId4>, // at most of length 1
+    pub eia_clientowner: ClientOwner4,
+    pub eia_flags: u32,
+    pub eia_state_protect: StateProtect4A,
+    pub eia_client_impl_id: Vec<NfsImplId4>, // at most of length 1
 }
 
 #[derive(Debug, Decode)]
@@ -64,13 +64,54 @@ pub struct ExchangeID4ResultOk {
     pub eir_state_protect: StateProtect4R,
     pub eir_server_owner: ServerOwner4,
     pub eir_server_scope: Opaque, // With Max Length of NFS4_OPAQUE_LIMIT
-    pub eir_server_impl_id: NfsImplId4, // with max length of 1
+    pub eir_server_impl_id: Vec<NfsImplId4>, // with max length of 1
 }
 
 #[derive(Debug, Decode)]
 #[repr(u32)]
 pub enum ExchangeID4Result {
     NFS4_OK(ExchangeID4ResultOk),
+    #[minibserde(catch_all)]
+    Default(u32),
+}
+
+
+#[derive(Debug, Encode, Decode)]
+pub struct ChannelAttrs4 {
+    pub ca_headerpadsize: Count4,
+    pub ca_maxrequestsize: Count4,
+    pub ca_maxresponsesize: Count4,
+    pub ca_maxresponsesize_cached: Count4,
+    pub ca_maxoperations: Count4,
+    pub ca_maxrequests: Count4,
+    pub ca_rdma_ird: Vec<u32>, // at most of length 1
+}
+
+
+#[derive(Debug, Encode)]
+pub struct CreateSession4Args {
+    pub csa_clientid: ClientId4,
+    pub csa_sequence: SequenceId4,
+    pub csa_flags: u32,
+    pub csa_fore_chan_attrs: ChannelAttrs4,
+    pub csa_back_chan_attrs: ChannelAttrs4,
+    pub csa_cb_program: u32,
+    pub csa_sec_parms: Vec<CallbackSecParms4>,
+}
+
+#[derive(Debug, Decode)]
+pub struct CreateSession4ResultOk {
+    pub csr_sessionid: SessionId4,
+    pub csr_sequence: SequenceId4,
+    pub csr_flags: u32,
+    pub csr_fore_chan_attrs: ChannelAttrs4,
+    pub csr_back_chan_attrs: ChannelAttrs4,
+}
+
+#[derive(Debug, Decode)]
+#[repr(u32)]
+pub enum CreateSession4Result {
+    NFS4_OK(CreateSession4ResultOk),
     #[minibserde(catch_all)]
     Default(u32),
 }

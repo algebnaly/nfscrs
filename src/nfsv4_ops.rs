@@ -3,7 +3,7 @@ use minibserde::{ByteArray, Decode, Encode};
 use rand::distr::{Distribution, StandardUniform};
 use rand::{Fill, Rng};
 
-use crate::nfs4_1_ops::Exchange4Args;
+use crate::nfs4_1_ops::{Exchange4Args, ExchangeID4Result};
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
     fattr4::FAttr4,
@@ -126,6 +126,25 @@ pub enum NFSResultOp4 {
     OP_VERIFY,
     OP_WRITE(Write4Result),
     OP_RELEASE_LOCKOWNER,
+    OP_BACKCHANNEL_CTL,
+    OP_BIND_CONN_TO_SESSION,
+    OP_EXCHANGE_ID(ExchangeID4Result),
+    OP_CREATE_SESSION,
+    OP_DESTROY_SESSION,
+    OP_FREE_STATEID,
+    OP_GET_DIR_DELEGATION,
+    OP_GETDEVICEINFO,
+    GETDEVICELIST,
+    LAYOUTCOMMIT,
+    LAYOUTGET,
+    LAYOUTRETURN,
+    SECINFO_NO_NAME,
+    SEQUENCE,
+    SET_SSV,
+    TEST_STATEID,
+    WANT_DELEGATION,
+    DESTROY_CLIENTID,
+    RECLAIM_COMPLETE,
     OP_ILLEGAL,
 }
 
