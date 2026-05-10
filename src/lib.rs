@@ -18,21 +18,16 @@ use crate::{
     constants::{READDIR_DEFAULT_ATTR, READDIR_MAX_COUNT},
     fattr4::{FAttr4, FAttr4Type, fattr4_names},
     fattr4_utils::bit_nums_to_attr_mask,
-    nfs4_1_ops::{
-        CreateSession4Args, CreateSession4Result, CreateSession4ResultOk, Exchange4Args,
-        ExchangeID4Result,
-    },
+    nfs4_1_ops::{CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result},
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
     nfscrs_error::{NFSCRSError, NFSCRSInnerError},
     nfscrs_types::{AbsolutePath, DirEntry},
     nfsv4_ops::{
-        CallBackClient4, ChangeInfo4, Close4Args, Close4Result, Compound4Result, Create4Args,
-        CreateType4, GetAttr4Args, GetAttr4Result, GetFH4Result, LookUp4Args,
-        NFS4CompoundProcedure, NFSArgOp4, NFSClientId4, NFSResultOp4, NFSStat4, Open4Args,
-        Open4Result, OpenConfirm4Args, OpenConfirm4Result, PutFH4Args, Read4Args, Read4Result,
-        ReadDir4Args, ReadDir4Result, Remove4Args, Remove4Result, Renew4Args, SetAttr4Args,
-        SetClientId4Args, SetClientId4Result, SetClientIdConfirm4Args, StateId4, Verifier4,
-        Write4Args, Write4Result,
+        ChangeInfo4, Close4Args, Close4Result, Compound4Result, Create4Args, CreateType4,
+        GetAttr4Args, GetAttr4Result, GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4,
+        NFSResultOp4, NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result,
+        PutFH4Args, Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, Remove4Args,
+        Remove4Result, Renew4Args, SetAttr4Args, StateId4, Write4Args, Write4Result,
     },
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::ONCRPCMessageReader,
@@ -266,12 +261,7 @@ impl NFSClientBuilder {
     }
     pub fn establish_session(mut self) -> Result<NFSClientSession, NFSCRSError> {
         let mut set_client_id_cops = NFS4CompoundProcedure::new();
-        let eia = Exchange4Args {
-            eia_clientowner: self.client_owner.clone(),
-            eia_flags: 0,
-            eia_state_protect: nfs4_1_ops::StateProtect4A::SP4_NONE,
-            eia_client_impl_id: Vec::new(),
-        };
+        let eia = Exchange4Args::new(self.client_owner.clone());
 
         let op_set_client_id = NFSArgOp4::EXCHANGE_ID(eia);
         set_client_id_cops.add_operation(op_set_client_id);

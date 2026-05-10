@@ -3,11 +3,10 @@ use minibserde::{Decode, Encode};
 use crate::{
     client::ClientOwner4,
     nfs4_1_types::{
-        CallbackSecParms4, Count4, GssHandle4, NfsImplId4, SecOId4, SequenceId4, ServerOwner4,
-        SessionId4,
+        CallbackSecParms4, Count4, EXCHGID4_FLAG_USE_NON_PNFS, GssHandle4, NfsImplId4, SecOId4,
+        SequenceId4, ServerOwner4, SessionId4, SlotId4,
     },
     nfs4_types::{BitMap4, ClientId4},
-    onc_rpc_defs,
     xdr_types::Opaque,
 };
 
@@ -40,6 +39,17 @@ pub struct Exchange4Args {
     pub eia_flags: u32,
     pub eia_state_protect: StateProtect4A,
     pub eia_client_impl_id: Vec<NfsImplId4>, // at most of length 1
+}
+
+impl Exchange4Args {
+    pub fn new(client_owner: ClientOwner4) -> Self {
+        Self {
+            eia_clientowner: client_owner,
+            eia_flags: EXCHGID4_FLAG_USE_NON_PNFS,
+            eia_state_protect: StateProtect4A::SP4_NONE,
+            eia_client_impl_id: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Decode)]
@@ -96,8 +106,8 @@ impl Default for ChannelAttrs4 {
             ca_headerpadsize: 4096,
             ca_maxrequestsize: 64 * 1024 * 1024,
             ca_maxresponsesize: 64 * 1024 * 1024,
-            ca_maxoperations: 1024,
-            ca_maxrequests: 1024,
+            ca_maxoperations: 64,
+            ca_maxrequests: 64,
             ca_rdma_ird: Vec::new(),
             ca_maxresponsesize_cached: 4096,
         }
@@ -142,6 +152,33 @@ pub struct CreateSession4ResultOk {
 #[repr(u32)]
 pub enum CreateSession4Result {
     NFS4_OK(CreateSession4ResultOk),
+    #[minibserde(catch_all)]
+    Default(u32),
+}
+
+#[derive(Debug, Encode)]
+pub struct Sequence4Args {
+    pub sa_session_id: SessionId4,
+    pub sa_sequence_id: SequenceId4,
+    pub sa_slot_id: SlotId4,
+    pub sa_highest_slot_id: SlotId4,
+    pub sa_cache_this: bool,
+}
+
+#[derive(Debug, Decode)]
+pub struct Sequence4ResultOk {
+    pub sr_session_id: SessionId4,
+    pub sr_sequence_id: SequenceId4,
+    pub sr_slot_id: SlotId4,
+    pub sr_highest_slot_id: SlotId4,
+    pub sr_target_highest_slot_id: SlotId4,
+    pub sr_status_flags: u32,
+}
+
+#[derive(Debug, Decode)]
+#[repr(u32)]
+pub enum Sequence4Result {
+    NFS4_OK(Sequence4ResultOk),
     #[minibserde(catch_all)]
     Default(u32),
 }
