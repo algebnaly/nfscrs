@@ -7,7 +7,7 @@ edition = "2024"
 onc-rpc = "0.3"
 rand = "0.9.1"
 serde = { version = "1.0.219", features = ["derive", "alloc"] }
-minibserde = "0.1"
+minibserde = "0.2"
 minibserde_xdr = "0.1"
 thiserror = "2.0.12"
 dashmap = "6.1.0"

@@ -2,6 +2,7 @@ use minibserde::{Decode, Encode};
 
 use crate::{
     client::ClientOwner4,
+    constants::SLOT_NUM,
     nfs4_1_types::{
         CallbackSecParms4, Count4, EXCHGID4_FLAG_USE_NON_PNFS, GssHandle4, NfsImplId4, SecOId4,
         SequenceId4, ServerOwner4, SessionId4, SlotId4,
@@ -106,8 +107,8 @@ impl Default for ChannelAttrs4 {
             ca_headerpadsize: 4096,
             ca_maxrequestsize: 64 * 1024 * 1024,
             ca_maxresponsesize: 64 * 1024 * 1024,
-            ca_maxoperations: 64,
-            ca_maxrequests: 64,
+            ca_maxoperations: SLOT_NUM,
+            ca_maxrequests: SLOT_NUM,
             ca_rdma_ird: Vec::new(),
             ca_maxresponsesize_cached: 4096,
         }
@@ -163,6 +164,18 @@ pub struct Sequence4Args {
     pub sa_slot_id: SlotId4,
     pub sa_highest_slot_id: SlotId4,
     pub sa_cache_this: bool,
+}
+
+impl Sequence4Args {
+    pub fn new(session_id: SessionId4, sequence_id: SequenceId4, slot_id: SlotId4) -> Self {
+        Self {
+            sa_session_id: session_id,
+            sa_sequence_id: sequence_id,
+            sa_slot_id: slot_id,
+            sa_highest_slot_id: 0,
+            sa_cache_this: false,
+        }
+    }
 }
 
 #[derive(Debug, Decode)]

@@ -4,7 +4,8 @@ use rand::distr::{Distribution, StandardUniform};
 use rand::{Fill, Rng};
 
 use crate::nfs4_1_ops::{
-    CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result,
+    CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result, Sequence4Args,
+    Sequence4Result,
 };
 use crate::{
     NFSCRSInnerError, NFSClientSession, OpenOptions,
@@ -24,46 +25,43 @@ pub const TAG: &str = "nfscrstag";
 #[repr(u32)]
 #[derive(Debug, Encode)]
 pub enum NFSArgOp4 {
-    _PlaceHolder0,
-    _PlaceHolder1,
-    _PlaceHolder2,
-    OP_ACCESS,                                       //ACCESS4args opaccess;
-    OP_CLOSE(Close4Args),                            //CLOSE4args opclose;
-    OP_COMMIT,                                       //COMMIT4args opcommit;
-    OP_CREATE(Create4Args),                          //CREATE4args opcreate;
-    OP_DELEGPURGE,                                   //DELEGPURGE4args opdelegpurge;
-    OP_DELEGRETURN,                                  //DELEGRETURN4args opdelegreturn;
-    OP_GETATTR(GetAttr4Args),                        //GETATTR4args opgetattr;
-    OP_GETFH,                                        //void;
-    OP_LINK,                                         //LINK4args oplink;
-    OP_LOCK,                                         //LOCK4args oplock;
-    OP_LOCKT,                                        //LOCKT4args oplockt;
-    OP_LOCKU,                                        //LOCKU4args oplocku;
-    OP_LOOKUP(LookUp4Args),                          //LOOKUP4args oplookup;
-    OP_LOOKUPP,                                      //void;
-    OP_NVERIFY,                                      //NVERIFY4args opnverify;
-    OP_OPEN(Open4Args),                              //OPEN4args opopen;
-    OP_OPENATTR,                                     //OPENATTR4args opopenattr;
-    OP_OPEN_CONFIRM(OpenConfirm4Args),               //OPEN_CONFIRM4args opopen_confirm;
-    OP_OPEN_DOWNGRADE,                               //OPEN_DOWNGRADE4args opopen_downgrade;
-    OP_PUTFH(PutFH4Args),                            //PUTFH4args opputfh;
-    OP_PUTPUBFH,                                     //void;
-    OP_PUTROOTFH,                                    //void;
-    OP_READ(Read4Args),                              //READ4args opread;
-    OP_READDIR(ReadDir4Args),                        //READDIR4args opreaddir;
-    OP_READLINK,                                     //void;
-    OP_REMOVE(Remove4Args),                          //REMOVE4args opremove;
-    OP_RENAME,                                       //RENAME4args oprename;
-    OP_RENEW(Renew4Args),                            //RENEW4args oprenew;
-    OP_RESTOREFH,                                    //void;
-    OP_SAVEFH,                                       //void;
-    OP_SECINFO,                                      //SECINFO4args opsecinfo;
-    OP_SETATTR(SetAttr4Args),                        //SETATTR4args opsetattr;
-    OP_SETCLIENTID(SetClientId4Args),                //SETCLIENTID4args opsetclientid;
-    OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
-    OP_VERIFY,                                       //VERIFY4args opverify;
-    OP_WRITE(Write4Args),                            //WRITE4args opwrite;
-    OP_RELEASE_LOCKOWNER, //RELEASE_LOCKOWNER4args, only avaliable in nfs 4.0
+    ACCESS = 3,                                   //ACCESS4args opaccess;
+    CLOSE(Close4Args),                            //CLOSE4args opclose;
+    COMMIT,                                       //COMMIT4args opcommit;
+    CREATE(Create4Args),                          //CREATE4args opcreate;
+    DELEGPURGE,                                   //DELEGPURGE4args opdelegpurge;
+    DELEGRETURN,                                  //DELEGRETURN4args opdelegreturn;
+    GETATTR(GetAttr4Args),                        //GETATTR4args opgetattr;
+    GETFH,                                        //void;
+    LINK,                                         //LINK4args oplink;
+    LOCK,                                         //LOCK4args oplock;
+    LOCKT,                                        //LOCKT4args oplockt;
+    LOCKU,                                        //LOCKU4args oplocku;
+    LOOKUP(LookUp4Args),                          //LOOKUP4args oplookup;
+    LOOKUPP,                                      //void;
+    NVERIFY,                                      //NVERIFY4args opnverify;
+    OPEN(Open4Args),                              //OPEN4args opopen;
+    OPENATTR,                                     //OPENATTR4args opopenattr;
+    OPEN_CONFIRM(OpenConfirm4Args),               //OPEN_CONFIRM4args opopen_confirm;
+    OPEN_DOWNGRADE,                               //OPEN_DOWNGRADE4args opopen_downgrade;
+    PUTFH(PutFH4Args),                            //PUTFH4args opputfh;
+    PUTPUBFH,                                     //void;
+    PUTROOTFH,                                    //void;
+    READ(Read4Args),                              //READ4args opread;
+    READDIR(ReadDir4Args),                        //READDIR4args opreaddir;
+    READLINK,                                     //void;
+    REMOVE(Remove4Args),                          //REMOVE4args opremove;
+    RENAME,                                       //RENAME4args oprename;
+    RENEW(Renew4Args),                            //RENEW4args oprenew;
+    RESTOREFH,                                    //void;
+    SAVEFH,                                       //void;
+    SECINFO,                                      //SECINFO4args opsecinfo;
+    SETATTR(SetAttr4Args),                        //SETATTR4args opsetattr;
+    SETCLIENTID(SetClientId4Args),                //SETCLIENTID4args opsetclientid;
+    SETCLIENTID_CONFIRM(SetClientIdConfirm4Args), //SETCLIENTID_CONFIRM4args opsetclientid_confirm;
+    VERIFY,                                       //VERIFY4args opverify;
+    WRITE(Write4Args),                            //WRITE4args opwrite;
+    RELEASE_LOCKOWNER, //RELEASE_LOCKOWNER4args, only avaliable in nfs 4.0
     BACKCHANNEL_CTL,
     BIND_CONN_TO_SESSION,
     EXCHANGE_ID(Exchange4Args),
@@ -77,71 +75,69 @@ pub enum NFSArgOp4 {
     LAYOUTGET,
     LAYOUTRETURN,
     SECINFO_NO_NAME,
-    SEQUENCE,
+    SEQUENCE(Sequence4Args),
     SET_SSV,
     TEST_STATEID,
     WANT_DELEGATION,
     DESTROY_CLIENTID,
     RECLAIM_COMPLETE,
-    OP_ILLEGAL = 10044, //void;// well, this is actually 10044
+    ILLEGAL = 10044, //void;// well, this is actually 10044
 }
 
 #[derive(Debug, Decode)]
+#[repr(u32)]
 pub enum NFSResultOp4 {
-    _PlaceHolder0,
-    _PlaceHolder1,
-    _PlaceHolder2,
-    OP_ACCESS,
-    OP_CLOSE(Close4Result),
-    OP_COMMIT,
-    OP_CREATE(Create4Result),
-    OP_DELEGPURGE,
-    OP_DELEGRETURN,
-    OP_GETATTR(GetAttr4Result),
-    OP_GETFH(GetFH4Result),
-    OP_LINK,
-    OP_LOCK,
-    OP_LOCKT,
-    OP_LOCKU,
-    OP_LOOKUP(LookUp4Result),
-    OP_LOOKUPP,
-    OP_NVERIFY,
-    OP_OPEN(Open4Result),
-    OP_OPENATTR,
-    OP_OPEN_CONFIRM(OpenConfirm4Result),
-    OP_OPEN_DOWNGRADE,
-    OP_PUTFH(PutFH4Result),
-    OP_PUTPUBFH,
-    OP_PUTROOTFH(PutRootFH4Result),
-    OP_READ(Read4Result),
-    OP_READDIR(ReadDir4Result),
-    OP_READLINK,
-    OP_REMOVE(Remove4Result),
-    OP_RENAME,
-    OP_RENEW(Renew4Result),
-    OP_RESTOREFH,
-    OP_SAVEFH,
-    OP_SECINFO,
-    OP_SETATTR(SetAttr4Result),
-    OP_SETCLIENTID(SetClientId4Result),
-    OP_SETCLIENTID_CONFIRM(SetClientIdConfirm4Result),
-    OP_VERIFY,
-    OP_WRITE(Write4Result),
-    OP_RELEASE_LOCKOWNER,
-    OP_BACKCHANNEL_CTL,
-    OP_BIND_CONN_TO_SESSION,
-    OP_EXCHANGE_ID(ExchangeID4Result),
-    OP_CREATE_SESSION(CreateSession4Result),
-    OP_DESTROY_SESSION,
-    OP_FREE_STATEID,
-    OP_GET_DIR_DELEGATION,
-    OP_GETDEVICEINFO,
+    ACCESS = 3,
+    CLOSE(Close4Result),
+    COMMIT,
+    CREATE(Create4Result),
+    DELEGPURGE,
+    DELEGRETURN,
+    GETATTR(GetAttr4Result),
+    GETFH(GetFH4Result),
+    LINK,
+    LOCK,
+    LOCKT,
+    LOCKU,
+    LOOKUP(LookUp4Result),
+    LOOKUPP,
+    NVERIFY,
+    OPEN(Open4Result),
+    OPENATTR,
+    OPEN_CONFIRM(OpenConfirm4Result),
+    OPEN_DOWNGRADE,
+    PUTFH(PutFH4Result),
+    PUTPUBFH,
+    PUTROOTFH(PutRootFH4Result),
+    READ(Read4Result),
+    READDIR(ReadDir4Result),
+    READLINK,
+    REMOVE(Remove4Result),
+    RENAME,
+    RENEW(Renew4Result),
+    RESTOREFH,
+    SAVEFH,
+    SECINFO,
+    SETATTR(SetAttr4Result),
+    SETCLIENTID(SetClientId4Result),
+    SETCLIENTID_CONFIRM(SetClientIdConfirm4Result),
+    VERIFY,
+    WRITE(Write4Result),
+    RELEASE_LOCKOWNER,
+    BACKCHANNEL_CTL,
+    BIND_CONN_TO_SESSION,
+    EXCHANGE_ID(ExchangeID4Result),
+    CREATE_SESSION(CreateSession4Result),
+    DESTROY_SESSION,
+    FREE_STATEID,
+    GET_DIR_DELEGATION,
+    GETDEVICEINFO,
     GETDEVICELIST,
     LAYOUTCOMMIT,
     LAYOUTGET,
     LAYOUTRETURN,
     SECINFO_NO_NAME,
-    SEQUENCE,
+    SEQUENCE(Sequence4Result),
     SET_SSV,
     TEST_STATEID,
     WANT_DELEGATION,

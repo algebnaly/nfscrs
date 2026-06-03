@@ -86,7 +86,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d894aa17a62d75796f56d2ce7d857138352f1fc512b110f698bc6923db3fd3d"
 dependencies = [
  "minibserde-core",
- "minibserde-derive",
+ "minibserde-derive 0.1.0",
+]
+
+[[package]]
+name = "minibserde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0042ed31ea1577908c3ae39cd9d3d47c4194c2ebaa3171929bea374eba069b7d"
+dependencies = [
+ "minibserde-core",
+ "minibserde-derive 0.2.0",
 ]
 
 [[package]]
@@ -107,12 +117,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "minibserde-derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abf2fb72dc6fa8eb15c6916e38fd22b441d1d9d7755a0fd6b100893d1f3d9f31"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "minibserde_xdr"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8f8d761540d6fd2b37a34d8dab86156dab5f64d97672108ebc26c0598d5960e"
 dependencies = [
- "minibserde",
+ "minibserde 0.1.0",
 ]
 
 [[package]]
@@ -120,7 +141,7 @@ name = "nfscrs"
 version = "0.2.0"
 dependencies = [
  "dashmap",
- "minibserde",
+ "minibserde 0.2.0",
  "minibserde_xdr",
  "onc-rpc",
  "rand",
