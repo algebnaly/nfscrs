@@ -8,8 +8,6 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex},
-    thread::sleep,
-    time::Duration,
 };
 
 use crate::{
@@ -20,7 +18,6 @@ use crate::{
     fattr4_utils::bit_nums_to_attr_mask,
     nfs4_1_ops::{
         CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result, Sequence4Args,
-        Sequence4Result,
     },
     nfs4_1_types::SessionId4,
     nfs4_types::{BitMap4, ClientId4, Count4, NFSFH4, Offset4},
@@ -37,7 +34,6 @@ use crate::{
     oncrpc_msg::ONCRPCMessageReader,
     xdr_types::Opaque,
 };
-use dashmap::DashMap;
 use minibserde::ByteBuf;
 use onc_rpc::{AcceptedStatus, ReplyBody, RpcMessage, auth::AuthUnixParams};
 
@@ -64,7 +60,6 @@ mod state;
 mod xdr_types;
 
 pub use state::*;
-use tracing::debug;
 
 #[derive(Debug)]
 pub struct NFSClientBuilder {
@@ -285,19 +280,19 @@ impl NFSClientBuilder {
         }
 
         let client_id: ClientId4;
-        let sequence: u32;
+        let eir_sequence_id: u32; // exchange id result sequence id, this seq_id only used in create_session. do not confused with slot seq_id
         if let Some(NFSResultOp4::EXCHANGE_ID(res)) = result.resarray.last()
             && let ExchangeID4Result::NFS4_OK(res_ok) = res
         {
             client_id = res_ok.eir_client_id;
-            sequence = res_ok.eir_sequence_id;
+            eir_sequence_id = res_ok.eir_sequence_id;
         } else {
             return Err(NFSCRSError::OperationError(format!(
                 "set_client_id operation failed: {result:?}",
             )));
         }
 
-        let create_session_arg = CreateSession4Args::new(client_id, sequence);
+        let create_session_arg = CreateSession4Args::new(client_id, eir_sequence_id);
 
         let mut cops = NFS4CompoundProcedure::new();
         let op_create_session = NFSArgOp4::CREATE_SESSION(create_session_arg);
@@ -320,20 +315,28 @@ impl NFSClientBuilder {
         };
 
         // TODO: implement callback
-        let sequence = create_session_result_ok.csr_sequence;
+        // ignore csr_sequence,
+        // since we did not implement reconstruct of session for now
+        let _ = create_session_result_ok.csr_sequence;
         let session_id = create_session_result_ok.csr_sessionid;
         let _fore_chan_attrs = create_session_result_ok.csr_fore_chan_attrs;
         let _back_chan_attrs = create_session_result_ok.csr_back_chan_attrs;
 
         let mut cops = NFS4CompoundProcedure::new();
+
+        let mut slot_seq_id = 1; // slot seq id starts from 1, per rfc5661 2.10.6.1
+
         // operation to query lease time.
         cops.add_operation(NFSArgOp4::SEQUENCE(Sequence4Args {
             sa_session_id: session_id.clone(),
             sa_cache_this: false,
-            sa_sequence_id: sequence,
+            sa_sequence_id: slot_seq_id,
             sa_highest_slot_id: 0,
             sa_slot_id: 0,
         }));
+
+        slot_seq_id += 1; // increment slot seq_id
+
         cops.add_operation(NFSArgOp4::PUTROOTFH);
         cops.add_operation(NFSArgOp4::GETATTR(GetAttr4Args {
             attr_request: bit_nums_to_attr_mask(&[fattr4_names::FATTR4_LEASE_TIME]),
@@ -370,25 +373,26 @@ impl NFSClientBuilder {
             stream,
             self.msg_reader,
         )));
-        let nfs_transport_ref = nfs_transport.clone();
 
-        std::thread::spawn(move || {
-            loop {
-                sleep(Duration::from_secs((lease_time / 2).max(1) as u64));
-                {
-                    let mut nfs_transport_guard = match nfs_transport_ref.lock() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            tracing::warn!("{e:?}");
-                            continue;
-                        }
-                    };
-                    if let Err(e) = renew_operation(client_id, &mut *nfs_transport_guard) {
-                        tracing::warn!("{e:?}");
-                    }
-                }
-            }
-        });
+        // TODO: implement renew
+        // let nfs_transport_ref = nfs_transport.clone();
+        // std::thread::spawn(move || {
+        //     loop {
+        //         sleep(Duration::from_secs((lease_time / 2).max(1) as u64));
+        //         {
+        //             let mut nfs_transport_guard = match nfs_transport_ref.lock() {
+        //                 Ok(g) => g,
+        //                 Err(e) => {
+        //                     tracing::warn!("{e:?}");
+        //                     continue;
+        //                 }
+        //             };
+        //             if let Err(e) = renew_operation(client_id, &mut *nfs_transport_guard) {
+        //                 tracing::warn!("{e:?}");
+        //             }
+        //         }
+        //     }
+        // });
 
         let session = NFSClientSession {
             nfs_transport: nfs_transport,
@@ -402,7 +406,7 @@ impl NFSClientBuilder {
             ))),
             client_owner: self.client_owner,
             session_id: session_id,
-            squence_id: sequence + 1,
+            squence_id: slot_seq_id,
         };
         Ok(session)
     }
@@ -452,15 +456,8 @@ impl NFSClientSession {
             self.squence_id,
             0,
         )));
+        self.squence_id += 1;
         cops
-    }
-
-    pub fn update_sequence_id_from_result_array(&mut self, result_array: &[NFSResultOp4]) {
-        if let Some(NFSResultOp4::SEQUENCE(Sequence4Result::NFS4_OK(seq))) = result_array.first() {
-            self.squence_id = seq.sr_sequence_id;
-        } else {
-            panic!("first result is not a sequence result")
-        }
     }
 
     pub fn read_dir(&mut self) {}
@@ -490,8 +487,6 @@ impl NFSClientSession {
         else {
             return Err(NFSCRSError::EmptyReplyBody);
         };
-
-        self.update_sequence_id_from_result_array(&result.resarray);
 
         Ok(res.obj_attributes.clone())
     }
@@ -524,8 +519,6 @@ impl NFSClientSession {
             }
         }
 
-        self.update_sequence_id_from_result_array(&result.resarray);
-
         Ok(())
     }
 
@@ -545,8 +538,6 @@ impl NFSClientSession {
     }
 
     pub fn list_dir(&mut self, path: &AbsolutePath) -> Result<Vec<DirEntry>, NFSCRSError> {
-        let mut cops = self.get_sequenced_compound_procedure(0);
-
         let mut readdir_args = ReadDir4Args::start_read(
             READDIR_MAX_COUNT,
             READDIR_MAX_COUNT,
@@ -554,12 +545,7 @@ impl NFSClientSession {
         );
         let mut dir_entry_list: Vec<DirEntry> = Vec::new();
         loop {
-            cops.argarray.clear();
-            cops.add_operation(NFSArgOp4::SEQUENCE(Sequence4Args::new(
-                self.session_id.clone(),
-                self.squence_id,
-                0,
-            )));
+            let mut cops = self.get_sequenced_compound_procedure(0);
             push_lookup_ops(&mut cops, path)?;
             cops.add_operation(NFSArgOp4::READDIR(readdir_args));
 
@@ -578,8 +564,6 @@ impl NFSClientSession {
             let entries_with_cookie = res.build_entries();
 
             dir_entry_list.extend_from_slice(&entries_with_cookie.0);
-
-            self.update_sequence_id_from_result_array(&result.resarray);
 
             if res.readdir_complete() {
                 break;
@@ -728,7 +712,6 @@ impl NFSClientSession {
             ),
         );
         open_owner_ref.path_map.insert(path_clone, file_key);
-        self.update_sequence_id_from_result_array(&res_array);
         Ok(opening_file)
     }
 
@@ -737,6 +720,7 @@ impl NFSClientSession {
         opened_file: OpenedFile,
         seq_id: &mut u32,
     ) -> Result<OpenedFile, NFSCRSError> {
+        //TODO: remove this, because open confirm are obsolete in nfs4.1
         let mut cops = NFS4CompoundProcedure::new();
         cops.add_operation(NFSArgOp4::PUTFH(PutFH4Args {
             object: opened_file.file_handle.clone(),
@@ -903,8 +887,6 @@ impl NFSClientSession {
                 NFSCRSInnerError::WrongMessageType("expecting Read4Result".to_owned()).into(),
             );
         };
-
-        self.update_sequence_id_from_result_array(&res_array);
 
         Ok(read_result_ok.into())
     }
@@ -1209,7 +1191,7 @@ impl NFSClientSession {
 
 fn renew_operation(client_id: u64, nfs_transport: &mut NFSTransport) -> Result<(), NFSCRSError> {
     let mut cops = NFS4CompoundProcedure::new();
-    cops.add_operation(NFSArgOp4::RENEW(Renew4Args { client_id }));
+    cops.add_operation(NFSArgOp4::RENEW(Renew4Args { client_id })); // TODO: replace this with sequence operation,
     let r = nfs_transport.send_ops_and_get_result(&cops)?;
     if r.is_status_ok() {
         Ok(())
