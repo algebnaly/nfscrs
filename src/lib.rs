@@ -27,8 +27,8 @@ use crate::{
         ChangeInfo4, Close4Args, Close4Result, Compound4Result, Create4Args, CreateType4,
         GetAttr4Args, GetAttr4Result, GetFH4Result, LookUp4Args, NFS4CompoundProcedure, NFSArgOp4,
         NFSResultOp4, NFSStat4, Open4Args, Open4Result, OpenConfirm4Args, OpenConfirm4Result,
-        PutFH4Args, Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, Remove4Args,
-        Remove4Result, Renew4Args, SetAttr4Args, StateId4, Write4Args, Write4Result,
+        PutFH4Args, Read4Args, Read4Result, ReadDir4Args, ReadDir4Result, ReclaimComplete4Args,
+        Remove4Args, Remove4Result, SetAttr4Args, StateId4, Write4Args, Write4Result,
     },
     nfsv4_rpc_def::{NFSPROC4_COMPOUND, NFSPROC4_NULL},
     oncrpc_msg::ONCRPCMessageReader,
@@ -81,7 +81,7 @@ pub struct NFSClientSession {
     remote_addr: SocketAddr,
     client_id: ClientId4,
     server_info: ServerInfo, // TODO: add a handler to backgroud renew thread
-    open_owner: Arc<crate::nfs4_open_owner::OpenOwner>,
+    open_owner: Arc<crate::nfs4_open_owner::OpenOwner>, // we currently only support one open owner.
     client_owner: ClientOwner4,
     session_id: SessionId4,
     squence_id: u32, // we use single slot for early implementation
@@ -263,18 +263,29 @@ impl NFSClientBuilder {
         let reply = self.msg_reader.read(stream)?;
         Ok(reply)
     }
-    pub fn establish_session(mut self) -> Result<NFSClientSession, NFSCRSError> {
+    pub fn establish_session(self) -> Result<NFSClientSession, NFSCRSError> {
+        let stream = TcpStream::connect(self.remote_addr)?;
+        let xid = Cell::new(self.pop_xid());
+
+        let nfs_transport = Arc::new(Mutex::new(NFSTransport::new(
+            xid.get(),
+            self.auth,
+            stream,
+            self.msg_reader,
+        )));
+
         let mut set_client_id_cops = NFS4CompoundProcedure::new();
         let eia = Exchange4Args::new(self.client_owner.clone());
 
         let op_set_client_id = NFSArgOp4::EXCHANGE_ID(eia);
         set_client_id_cops.add_operation(op_set_client_id);
-        let payload = set_client_id_cops.to_bytes()?;
-        let msg = self.get_onc_rpc_compound_call_message(payload);
-        let mut stream = TcpStream::connect(self.remote_addr)?;
-        self.send_msg(msg, &mut stream)?;
-        let reply = self.read_reply(&mut stream)?;
-        let result = read_compound_result(&reply)?;
+
+        let mut nfs_transport_guard = nfs_transport.lock().map_err(|e| {
+            NFSCRSError::InnerError(NFSCRSInnerError::PoisonedMutex(format!("{e:?}")))
+        })?;
+
+        let result = nfs_transport_guard.send_ops_and_get_result(&set_client_id_cops)?;
+
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -298,11 +309,7 @@ impl NFSClientBuilder {
         let op_create_session = NFSArgOp4::CREATE_SESSION(create_session_arg);
         cops.add_operation(op_create_session);
 
-        let payload = cops.to_bytes()?;
-        let cops_msg = self.get_onc_rpc_compound_call_message(payload);
-        self.send_msg(cops_msg, &mut stream)?;
-        let reply = self.read_reply(&mut stream)?;
-        let mut result = read_compound_result(&reply)?;
+        let mut result = nfs_transport_guard.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -342,11 +349,7 @@ impl NFSClientBuilder {
             attr_request: bit_nums_to_attr_mask(&[fattr4_names::FATTR4_LEASE_TIME]),
         }));
 
-        let payload = cops.to_bytes()?;
-        let cops_msg = self.get_onc_rpc_compound_call_message(payload);
-        self.send_msg(cops_msg, &mut stream)?;
-        let reply = self.read_reply(&mut stream)?;
-        let mut result = read_compound_result(&reply)?;
+        let mut result = nfs_transport_guard.send_ops_and_get_result(&cops)?;
         if !result.is_status_ok() {
             return Err(NFSCRSError::NFSStatError(result.status));
         }
@@ -366,13 +369,25 @@ impl NFSClientBuilder {
 
         result.resarray.pop(); // discard PUTROOTFH result
 
-        let xid = Cell::new(self.pop_xid());
-        let nfs_transport = Arc::new(Mutex::new(NFSTransport::new(
-            xid.get(),
-            self.auth,
-            stream,
-            self.msg_reader,
-        )));
+        let mut cops = NFS4CompoundProcedure::new();
+        cops.add_operation(NFSArgOp4::SEQUENCE(Sequence4Args {
+            sa_session_id: session_id.clone(),
+            sa_cache_this: false,
+            sa_sequence_id: slot_seq_id,
+            sa_highest_slot_id: 0,
+            sa_slot_id: 0,
+        }));
+        slot_seq_id += 1;
+
+        cops.add_operation(NFSArgOp4::RECLAIM_COMPLETE(ReclaimComplete4Args {
+            rca_one_fs: false,
+        }));
+
+        let result = nfs_transport_guard.send_ops_and_get_result(&cops)?;
+
+        if !result.is_status_ok() {
+            return Err(NFSCRSError::NFSStatError(result.status));
+        }
 
         // TODO: implement renew
         // let nfs_transport_ref = nfs_transport.clone();
@@ -393,6 +408,8 @@ impl NFSClientBuilder {
         //         }
         //     }
         // });
+
+        drop(nfs_transport_guard);
 
         let session = NFSClientSession {
             nfs_transport: nfs_transport,
@@ -589,18 +606,13 @@ impl NFSClientSession {
         &mut self,
         path: &AbsolutePath,
         open_options: OpenOptions,
-        seq_id: &mut u32,
     ) -> Result<OpenedFile, NFSCRSError> {
-        let mut cops = self.get_sequenced_compound_procedure(0);
-
         let (dirs, filename) = split_path(path)?;
-
-        push_lookup_ops(&mut cops, &dirs)?;
 
         let open_owner_ref = self.open_owner.clone();
         let path_clone = path.clone().into_owned();
 
-        tracing::debug!("open: path = {}, seq_id = {:?}", path, seq_id);
+        tracing::debug!("open: path = {}, seq_id = {:?}", path, 0);
 
         if let Some(file_key_inner) = open_owner_ref.path_map.get(&path_clone)
             && let Some(file_open_state) = open_owner_ref.files.get(&file_key_inner)
@@ -611,10 +623,10 @@ impl NFSClientSession {
             return Ok(file_open_state.get_opened_file(share_access, 0, path_clone));
         }
 
-        let seq_id_val = *seq_id;
-        *seq_id += 1;
+        let mut cops = self.get_sequenced_compound_procedure(0);
+        push_lookup_ops(&mut cops, &dirs)?;
 
-        let open_args = Open4Args::with_open_options(self, filename, seq_id_val, open_options);
+        let open_args = Open4Args::with_open_options(self, filename, 0, open_options);
 
         let share_access = open_args.share_access;
         let share_deny = open_args.share_deny;
@@ -770,10 +782,9 @@ impl NFSClientSession {
 
     pub fn close(&mut self, opened_file: &mut OpenedFile) -> Result<(), NFSCRSError> {
         let open_owner_ref = self.open_owner.clone();
-        let mut seq_id_and_path_guard = open_owner_ref.lock_seq_id_and_path(&opened_file.path)?;
-        let seq_id = &mut *seq_id_and_path_guard.seq_id_guard;
+        let _path_guard = open_owner_ref.lock_seq_id_and_path(&opened_file.path)?;
 
-        tracing::debug!("close: path = {}, seq_id = {:?}", opened_file.path, seq_id);
+        tracing::debug!("close: path = {}", opened_file.path);
 
         let state_id: StateId4;
         let needs_close: bool;
@@ -804,15 +815,12 @@ impl NFSClientSession {
         } // release file_open_state_entry
 
         if needs_close {
-            let seq_id_val = *seq_id;
-            *seq_id += 1;
-
-            let mut cops = NFS4CompoundProcedure::new();
+            let mut cops = self.get_sequenced_compound_procedure(0);
             cops.add_operation(NFSArgOp4::PUTFH(PutFH4Args {
                 object: opened_file.file_handle.clone(),
             }));
             cops.add_operation(NFSArgOp4::CLOSE(Close4Args {
-                seq_id: seq_id_val,
+                seq_id: 0,
                 open_state_id: state_id,
             }));
 
@@ -904,7 +912,7 @@ impl NFSClientSession {
 
         let state_id = file_open_state.get_state_id()?;
 
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         cops.add_operation(NFSArgOp4::PUTFH(PutFH4Args {
             object: opened_file.file_handle.clone(),
         }));
@@ -943,11 +951,13 @@ impl NFSClientSession {
         let mut opened_file = self.open_file(path, OpenOptions::new().write(true))?;
 
         let open_owner_ref = self.open_owner.clone();
-        let file_open_state = open_owner_ref.files.get(&opened_file.file_key).ok_or(
-            NFSCRSInnerError::IllegalState("file should opened".to_string()),
-        )?;
+        let state_id = {
+            let file_open_state = open_owner_ref.files.get(&opened_file.file_key).ok_or(
+                NFSCRSInnerError::IllegalState("file should opened".to_string()),
+            )?;
 
-        let state_id = file_open_state.get_state_id()?;
+            file_open_state.get_state_id()?
+        };
 
         let bitmap = self.set_attr(&opened_file.file_handle, &fattr4, &state_id)?;
 
@@ -961,7 +971,7 @@ impl NFSClientSession {
         fattr4: &FAttr4,
         state_id: &StateId4,
     ) -> Result<BitMap4, NFSCRSError> {
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         cops.add_operation(NFSArgOp4::PUTFH(PutFH4Args { object: fh.clone() }));
         let set_attr_op = SetAttr4Args {
             state_id: state_id.clone(),
@@ -985,7 +995,7 @@ impl NFSClientSession {
     }
 
     fn check_is_dir(&mut self, path: &AbsolutePath) -> Result<bool, NFSCRSError> {
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         push_lookup_and_getattr_ops(&mut cops, &path, GetAttr4Args::filetype())?;
         let mut result = self.send_ops_and_get_result_wrapper(&cops)?;
         if !result.is_status_ok() {
@@ -1009,7 +1019,7 @@ impl NFSClientSession {
         &mut self,
         path: &AbsolutePath,
     ) -> Result<AbsolutePath<'static>, NFSCRSError> {
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         push_lookup_ops(&mut cops, &path)?;
 
         let result = self.send_ops_and_get_result_wrapper(&cops)?;
@@ -1115,7 +1125,7 @@ impl NFSClientSession {
         let stripped_path = target_dir.strip_prefix(exist_part).map_err(|e| {
             NFSCRSInnerError::InvalidArgument(format!("failed to strip_prefix: {:?}", e))
         })?;
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         push_lookup_ops(&mut cops, exist_part)?;
         for c in stripped_path.components() {
             match c {
@@ -1166,7 +1176,7 @@ impl NFSClientSession {
                 "cannot remove file system root".to_string(),
             ))?;
 
-        let mut cops = NFS4CompoundProcedure::new();
+        let mut cops = self.get_sequenced_compound_procedure(0);
         push_lookup_ops(&mut cops, &parent)?;
         cops.add_operation(NFSArgOp4::REMOVE(Remove4Args {
             target: ByteBuf::from(name.as_bytes()),
@@ -1186,17 +1196,6 @@ impl NFSClientSession {
             .into());
         };
         Ok(cinfo)
-    }
-}
-
-fn renew_operation(client_id: u64, nfs_transport: &mut NFSTransport) -> Result<(), NFSCRSError> {
-    let mut cops = NFS4CompoundProcedure::new();
-    cops.add_operation(NFSArgOp4::RENEW(Renew4Args { client_id })); // TODO: replace this with sequence operation,
-    let r = nfs_transport.send_ops_and_get_result(&cops)?;
-    if r.is_status_ok() {
-        Ok(())
-    } else {
-        Err(NFSCRSError::NFSStatError(r.status))
     }
 }
 

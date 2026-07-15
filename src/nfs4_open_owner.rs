@@ -18,8 +18,8 @@ pub const PATH_LOCKS_NUM: usize = 1024;
 
 pub struct OpenOwner {
     pub owner: ByteBuf,
-    seq_id: Mutex<u32>,
-
+    // seq_id is not used in nfs4.1
+    // seq_id: Mutex<u32>,
     pub files: DashMap<FileKey, OpenFileState>,
     pub path_map: DashMap<AbsolutePathOwned, FileKey>,
     path_locks: Vec<Mutex<()>>, // protect `files` and `path_map` keep in sync
@@ -30,13 +30,6 @@ impl std::fmt::Debug for OpenOwner {
         let owner_str = String::from_utf8_lossy(&self.owner);
         f.debug_struct("OpenOwner")
             .field("owner", &owner_str)
-            .field(
-                "seq_id",
-                &self
-                    .seq_id
-                    .try_lock()
-                    .map_or("\"seq_id locked\"".to_string(), |v| v.to_string()),
-            )
             .field("files_count", &self.files.len())
             .field("path_map_count", &self.path_map.len())
             .finish()
@@ -51,7 +44,6 @@ impl OpenOwner {
 
         Self {
             owner,
-            seq_id: Mutex::new(0),
             files: DashMap::new(),
             path_map: DashMap::new(),
             path_locks,
@@ -75,21 +67,13 @@ impl OpenOwner {
         &'a self,
         path: &AbsolutePath,
     ) -> Result<OpenOwnerGuard<'a>, NFSCRSInnerError> {
-        let seq_id_guard = self
-            .seq_id
-            .lock()
-            .map_err(|e| NFSCRSInnerError::PoisonedMutex(format!("{:?}", e)))?;
         let path_guard = self
             .lock_path(path)
             .map_err(|e| NFSCRSInnerError::PoisonedMutex(format!("{:?}", e)))?;
-        Ok(OpenOwnerGuard {
-            seq_id_guard,
-            path_guard,
-        })
+        Ok(OpenOwnerGuard { path_guard })
     }
 }
 
 pub(crate) struct OpenOwnerGuard<'a> {
-    pub(crate) seq_id_guard: MutexGuard<'a, u32>,
     pub(crate) path_guard: MutexGuard<'a, ()>,
 }

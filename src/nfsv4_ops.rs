@@ -80,7 +80,7 @@ pub enum NFSArgOp4 {
     TEST_STATEID,
     WANT_DELEGATION,
     DESTROY_CLIENTID,
-    RECLAIM_COMPLETE,
+    RECLAIM_COMPLETE(ReclaimComplete4Args),
     ILLEGAL = 10044, //void;// well, this is actually 10044
 }
 
@@ -142,22 +142,23 @@ pub enum NFSResultOp4 {
     TEST_STATEID,
     WANT_DELEGATION,
     DESTROY_CLIENTID,
-    RECLAIM_COMPLETE,
+    RECLAIM_COMPLETE(ReclaimComplete4Result),
     OP_ILLEGAL,
 }
 
 #[repr(u32)]
 #[derive(Debug, Clone, Decode)]
 pub enum NFSStat4 {
-    NFS4_OK = 0,                         /*                0 everything is okay       */
-    NFS4ERR_PERM = 1,                    /*           1 caller not privileged    */
-    NFS4ERR_NOENT = 2,                   /*          2 no such file/directory   */
-    NFS4ERR_IO = 5,                      /*             5 hard I/O error           */
-    NFS4ERR_NXIO = 6,                    /*           6 no such device           */
-    NFS4ERR_ACCESS = 13,                 /*         13 access denied            */
-    NFS4ERR_EXIST = 17,                  /*          17 file already exists      */
-    NFS4ERR_XDEV = 18,                   /*           18 different file systems   */
-    _NFSSTAT4_UNUSED = 19,               /*19  Unused/reserved        */
+    NFS4_OK = 0,         /*                0 everything is okay       */
+    NFS4ERR_PERM = 1,    /*           1 caller not privileged    */
+    NFS4ERR_NOENT = 2,   /*          2 no such file/directory   */
+    NFS4ERR_IO = 5,      /*             5 hard I/O error           */
+    NFS4ERR_NXIO = 6,    /*           6 no such device           */
+    NFS4ERR_ACCESS = 13, /*         13 access denied            */
+    NFS4ERR_EXIST = 17,  /*          17 file already exists      */
+    NFS4ERR_XDEV = 18,   /*           18 different file systems   */
+    // _NFSSTAT4_UNUSED = 19,               /*19  Unused/reserved        */
+    // value 19 was removed from nfs4.1
     NFS4ERR_NOTDIR = 20,                 /*         20 should be a directory    */
     NFS4ERR_ISDIR = 21,                  /*          21 should not be directory  */
     NFS4ERR_INVAL = 22,                  /*          22 invalid argument         */
@@ -216,6 +217,56 @@ pub enum NFSStat4 {
     NFS4ERR_FILE_OPEN = 10046,           /*      10046 open file blocks op.     */
     NFS4ERR_ADMIN_REVOKED = 10047,       /*  10047 lock-owner state revoked */
     NFS4ERR_CB_PATH_DOWN = 10048,        /*10048  callback path down       */
+
+    /* NFSv4.1 errors start here. */
+    NFS4ERR_BADIOMODE = 10049,
+    NFS4ERR_BADLAYOUT = 10050,
+    NFS4ERR_BAD_SESSION_DIGEST = 10051,
+    NFS4ERR_BADSESSION = 10052,
+    NFS4ERR_BADSLOT = 10053,
+    NFS4ERR_COMPLETE_ALREADY = 10054,
+    NFS4ERR_CONN_NOT_BOUND_TO_SESSION = 10055,
+    NFS4ERR_DELEG_ALREADY_WANTED = 10056,
+    NFS4ERR_BACK_CHAN_BUSY = 10057, /*backchan reqs outstanding*/
+    NFS4ERR_LAYOUTTRYLATER = 10058,
+    NFS4ERR_LAYOUTUNAVAILABLE = 10059,
+    NFS4ERR_NOMATCHING_LAYOUT = 10060,
+    NFS4ERR_RECALLCONFLICT = 10061,
+    NFS4ERR_UNKNOWN_LAYOUTTYPE = 10062,
+    NFS4ERR_SEQ_MISORDERED = 10063, /* unexpected seq.ID in req*/
+    NFS4ERR_SEQUENCE_POS = 10064,   /* [CB_]SEQ. op not 1st op */
+    NFS4ERR_REQ_TOO_BIG = 10065,    /* request too big
+                                     */
+    NFS4ERR_REP_TOO_BIG = 10066,          /* reply too big
+                                           */
+    NFS4ERR_REP_TOO_BIG_TO_CACHE = 10067, /* rep. not all cached*/
+    NFS4ERR_RETRY_UNCACHED_REP = 10068,   /* retry & rep. uncached*/
+    NFS4ERR_UNSAFE_COMPOUND = 10069,      /* retry/recovery too hard */
+    NFS4ERR_TOO_MANY_OPS = 10070,         /*too many ops in [CB_]COMP*/
+    NFS4ERR_OP_NOT_IN_SESSION = 10071,    /* op needs [CB_]SEQ. op */
+    NFS4ERR_HASH_ALG_UNSUPP = 10072,      /* hash alg. not supp.
+                                           */
+    /* Error 10073 is unused. */
+    NFS4ERR_CLIENTID_BUSY = 10074,   /* clientid has state
+                                      */
+    NFS4ERR_PNFS_IO_HOLE = 10075,    /* IO to _SPARSE file hole */
+    NFS4ERR_SEQ_FALSE_RETRY = 10076, /* Retry != original req. */
+    NFS4ERR_BAD_HIGH_SLOT = 10077,   /* req has bad highest_slot*/
+    NFS4ERR_DEADSESSION = 10078,     /*new req sent to dead sess*/
+    NFS4ERR_ENCR_ALG_UNSUPP = 10079, /* encr alg. not supp.
+                                      */
+    NFS4ERR_PNFS_NO_LAYOUT = 10080, /* I/O without a layout
+                                     */
+    NFS4ERR_NOT_ONLY_OP = 10081, /* addl ops not allowed
+                                  */
+    NFS4ERR_WRONG_CRED = 10082, /* op done by wrong cred
+                                 */
+    NFS4ERR_WRONG_TYPE = 10083, /* op on wrong type object */
+    NFS4ERR_DIRDELEG_UNAVAIL = 10084, /* delegation not avail.
+                                 */
+    NFS4ERR_REJECT_DELEG = 10085,   /* cb rejected delegation */
+    NFS4ERR_RETURNCONFLICT = 10086, /* layout get before return*/
+    NFS4ERR_DELEG_REVOKED = 10087,  /* deleg./layout revoked */
 }
 
 #[derive(Debug, Decode)]
@@ -929,4 +980,14 @@ pub enum Remove4Result {
     NFS4_OK(Remove4ResultOk),
     #[minibserde(catch_all)]
     Default(u32),
+}
+
+#[derive(Debug, Encode)]
+pub struct ReclaimComplete4Args {
+    pub rca_one_fs: bool,
+}
+
+#[derive(Debug, Decode)]
+pub struct ReclaimComplete4Result {
+    pub rcr_status: NFSStat4,
 }
