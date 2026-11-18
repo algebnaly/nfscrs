@@ -226,8 +226,8 @@ impl FAttr4 {
 
 pub fn set_bitmap(bitmap: &mut BitMap4, bit_pos: usize) {
     let required_len = (bit_pos / 32) + 1;
-    while bitmap.len() < required_len {
-        bitmap.push(0);
+    if bitmap.len() < required_len {
+        bitmap.resize(required_len, 0);
     }
     bitmap[bit_pos / 32] |= 1 << (bit_pos % 32);
 }

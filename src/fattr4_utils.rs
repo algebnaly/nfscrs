@@ -79,14 +79,7 @@ pub(crate) fn attr_mask_to_list(attr_mask: &[u32]) -> Vec<usize> {
 pub(crate) fn bit_nums_to_attr_mask(bit_nums: &[usize]) -> Vec<u32> {
     let mut attr_mask: Vec<u32> = Vec::new();
     for b in bit_nums {
-        let p_num = b / 32;
-        let attr_mask_len = attr_mask.len();
-        let zero_needed = p_num + 1 - attr_mask_len;
-        for _ in 0..zero_needed {
-            attr_mask.push(0);
-        }
-        let left_shift_num = b % 32;
-        attr_mask[p_num] |= 1 << left_shift_num;
+        crate::fattr4::set_bitmap(&mut attr_mask, *b);
     }
     attr_mask
 }
@@ -123,4 +116,16 @@ pub(crate) fn mode_num(opt: &OpenOptions) -> u32 {
         mode |= 0o200;
     }
     mode
+}
+
+// caller must ensure WORDS is large enough to hold all bits in bit_nums
+pub(crate) const fn const_attr_mask<const WORDS: usize>(bit_nums: &[usize]) -> [u32; WORDS] {
+    let mut attr_mask = [0u32; WORDS];
+    let mut i = 0;
+    while i < bit_nums.len() {
+        let b = bit_nums[i];
+        attr_mask[b / 32] |= 1 << (b % 32);
+        i += 1;
+    }
+    attr_mask
 }

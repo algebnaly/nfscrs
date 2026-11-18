@@ -3,6 +3,8 @@ use minibserde::{ByteArray, Decode, Encode};
 use rand::distr::{Distribution, StandardUniform};
 use rand::{Fill, Rng};
 
+use crate::fattr4::fattr4_names;
+use crate::fattr4_utils::bit_nums_to_attr_mask;
 use crate::nfs4_1_ops::{
     CreateSession4Args, CreateSession4Result, Exchange4Args, ExchangeID4Result, Sequence4Args,
     Sequence4Result,
@@ -292,9 +294,10 @@ impl GetAttr4Args {
     pub fn new(attr_request: BitMap4) -> Self {
         Self { attr_request }
     }
+
     pub fn filetype() -> Self {
         Self {
-            attr_request: BitMap4::from(&[1]),
+            attr_request: bit_nums_to_attr_mask(&[fattr4_names::FATTR4_TYPE]),
         }
     }
 }
@@ -618,7 +621,7 @@ impl Open4Args {
         let mut fattr4_builder = FAttr4Builder::new();
         fattr4_builder.set_open_options(&open_options);
         let open_how = if open_options.create {
-            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(fattr4_builder.build()))
+            OpenFlag4::OPEN4_CREATE(CreateHow4::UNCHECKED4(FAttr4::simple_file_attr()))
         } else {
             OpenFlag4::OPEN4_NOCREATE
         };
