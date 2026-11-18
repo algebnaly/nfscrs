@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 onc-rpc = "0.3"
 rand = "0.9.1"
-serde = { version = "1.0.219", features = ["derive", "alloc"] }
 minibserde = "0.2"
 minibserde_xdr = "0.1"
 thiserror = "2.0.12"

@@ -1015,6 +1015,7 @@ impl NFSClientSession {
         }
     }
 
+    // a series of lookup ops, the number of successful ops will tell us how many path components exist
     fn path_exist_part(
         &mut self,
         path: &AbsolutePath,
@@ -1029,12 +1030,19 @@ impl NFSClientSession {
         } else {
             result.resarray.len() - 1
         };
+
         if succ_len == 0 {
+            return Err(NFSCRSError::OperationError(
+                "sequence operation failed".to_string(),
+            ));
+        }
+
+        if succ_len == 1 {
             return Err(NFSCRSError::OperationError(
                 "failed to put root fh".to_string(),
             ));
         }
-        let new_path = construct_path_with_n_components(path, succ_len)?;
+        let new_path = construct_path_with_n_components(path, succ_len - 1)?;
         Ok(new_path)
     }
 
